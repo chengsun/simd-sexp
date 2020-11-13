@@ -9,3 +9,19 @@ crate-type = ["staticlib"]
 
 [dependencies]
 ocaml = "0.18"
+
+[dev-dependencies]
+criterion = "0.3"
+rand = "0.7"
+
+[[bench]]
+name = "find_quote_transitions"
+harness = false
+
+[[bench]]
+name = "start_stop_transitions"
+harness = false
+
+[[bench]]
+name = "xor_masked_adjacent"
+harness = false
