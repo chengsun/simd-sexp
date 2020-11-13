@@ -1,0 +1,11 @@
+[package]
+name = "simd-sexp"
+version = "0.1.0"
+authors = ["Cheng Sun <_@chengsun.uk>"]
+edition = "2018"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ocaml = "0.18"

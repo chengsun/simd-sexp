@@ -1,0 +1,6 @@
+(library
+ (name simd_sexp_test)
+ (inline_tests)
+ (libraries simd_sexp)
+ (preprocess
+  (pps ppx_expect)))

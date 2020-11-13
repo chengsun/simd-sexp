@@ -1,0 +1,14 @@
+(rule
+ (targets libsimd_sexp.a)
+ (deps
+  (glob_files *.rs))
+ (action
+  (progn
+   (run cargo build --target-dir %{project_root}/../../target --release)
+   (run mv %{project_root}/../../target/release/libsimd_sexp.a libsimd_sexp.a))))
+
+(library
+ (name simd_sexp)
+ (foreign_archives simd_sexp)
+ (c_library_flags
+  (-lpthread -lc -lm)))
