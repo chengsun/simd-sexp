@@ -1,6 +1,6 @@
 (library
  (name simd_sexp_test)
  (inline_tests)
- (libraries simd_sexp)
+ (libraries core_kernel simd_sexp)
  (preprocess
-  (pps ppx_expect)))
+  (pps ppx_expect ppx_jane)))

@@ -11,6 +11,10 @@ use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
+use std::convert::TryInto;
+use std::slice;
+use ocaml::bigarray;
+
 use crate::find_quote_transitions::*;
 use crate::ranges::*;
 use crate::utils::*;
@@ -149,10 +153,30 @@ fn extract_structural_indices(input: &[u8], output: &mut [usize], start_offset: 
     while i < n {
         let bitmask = unsafe { structural_indices_bitmask(&input[i..], &mut state) };
 
-        output_write = extract::fast(&mut output[output_write..], start_offset + i, bitmask);
+        output_write += extract::fast(&mut output[output_write..], start_offset + i, bitmask);
 
         i += 64;
     }
 
     output_write
+}
+
+#[ocaml::func]
+pub fn ml_extract_structural_indices(input: bigarray::Array1<u8>, mut output: bigarray::Array1<i64>, start_offset: i64) -> i64 {
+    let input = input.data();
+    let output =
+        if cfg!(target_pointer_width = "64") {
+            let data = output.data_mut();
+            unsafe { slice::from_raw_parts_mut(data.as_mut_ptr() as *mut usize, data.len()) }
+        } else {
+            unimplemented!()
+        };
+    let start_offset =
+        if cfg!(target_pointer_width = "64") {
+            start_offset as usize
+        } else {
+            unimplemented!()
+        };
+    let result = extract_structural_indices(input, output, start_offset);
+    result.try_into().unwrap()
 }

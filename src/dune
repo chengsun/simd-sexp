@@ -12,6 +12,7 @@
 
 (library
  (name simd_sexp)
+ (libraries core_kernel)
  (foreign_archives simd_sexp)
  (c_library_flags
   (-lpthread -lc -lm)))
