@@ -1,4 +1,8 @@
 use std::collections::HashMap;
+#[cfg(target_arch = "x86")]
+use core::arch::x86::*;
+#[cfg(target_arch = "x86_64")]
+use core::arch::x86_64::*;
 
 #[derive(Debug)]
 pub struct VectorClassifier {
@@ -58,9 +62,41 @@ impl VectorClassifier {
         Some(VectorClassifier { shuffle_table_lo, shuffle_table_hi })
     }
 
-    pub fn classify_one(&self, i: u8) -> bool {
-        self.shuffle_table_lo[(i & 0xF) as usize]
-            & self.shuffle_table_hi[((i >> 4) & 0xF) as usize] != 0
+    pub fn classify_generic(&self, in_out: &mut [u8]) {
+        for i in 0..in_out.len() {
+            in_out[i] = 
+                self.shuffle_table_lo[(in_out[i] & 0xF) as usize]
+                & self.shuffle_table_hi[((in_out[i] >> 4) & 0xF) as usize];
+        }
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[target_feature(enable = "ssse3")]
+    pub unsafe fn classify_ssse3(&self, in_out: &mut [__m128i]) {
+        let shuffle_table_lo = _mm_load_si128(&self.shuffle_table_lo as *const _ as *const __m128i);
+        let shuffle_table_hi = _mm_load_si128(&self.shuffle_table_hi as *const _ as *const __m128i);
+        let lo_nibble_epi8 = _mm_set1_epi8(0xF);
+
+        for i in 0..in_out.len() {
+            in_out[i] =
+                _mm_and_si128(
+                    _mm_shuffle_epi8(shuffle_table_lo, _mm_and_si128(in_out[i], lo_nibble_epi8)),
+                    _mm_shuffle_epi8(shuffle_table_hi, _mm_and_si128(_mm_srli_epi16(in_out[i], 4), lo_nibble_epi8)));
+        }
+    }
+
+    pub fn classify(&self, in_out: &mut [u8]) {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        if is_x86_feature_detected!("ssse3") {
+            let (prefix, aligned, suffix) =
+                unsafe { in_out.align_to_mut::<__m128i>() };
+            self.classify_generic(prefix);
+            unsafe { self.classify_ssse3(aligned); }
+            self.classify_generic(suffix);
+            return;
+        }
+
+        self.classify_generic(in_out);
     }
 }
 
@@ -72,7 +108,22 @@ mod tests {
         match (VectorClassifier::new(accept), expect_constructible) {
             (Some(classifier), true) => {
                 for i in 0u8..=255 {
-                    assert_eq!(accept[i as usize], classifier.classify_one(i), "at index {}", i);
+                    let expected_result = accept[i as usize];
+                    let generic_result = {
+                        let mut in_out = [i; 1];
+                        classifier.classify_generic(&mut in_out);
+                        in_out[0] != 0
+                    };
+                    let ssse3_result = unsafe {
+                        let mut in_out = [_mm_set1_epi8(i as i8); 1];
+                        classifier.classify_ssse3(&mut in_out);
+                        let result = _mm_cmpgt_epi8(in_out[0], _mm_set1_epi8(0));
+                        if _mm_test_all_ones(result) != 0 { true }
+                        else if _mm_test_all_zeros(result, _mm_set1_epi8(!0)) != 0 { false }
+                        else { panic!("Expected all ones or zeros") }
+                    };
+                    assert_eq!(expected_result, generic_result, "at index {}", i);
+                    assert_eq!(expected_result, ssse3_result, "at index {}", i);
                 }
             },
             (None, false) => (),

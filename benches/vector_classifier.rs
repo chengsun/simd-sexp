@@ -15,12 +15,12 @@ fn bench(c: &mut Criterion) {
         naive_classifier.insert(c);
     }
 
-    const SIZE: usize = 64;
+    const SIZE: usize = 1000;
     let bytes = &[0; SIZE];
 
     let mut group = c.benchmark_group("vector_classifier");
     group.throughput(Throughput::Bytes(SIZE.try_into().unwrap()));
-    group.bench_function("hash-set-one-by-one",
+    group.bench_function("one-by-one-hash-set",
                          |b| b.iter(|| {
                              for byte in bytes {
                                  let _ = black_box(naive_classifier.contains(byte));
@@ -29,9 +29,17 @@ fn bench(c: &mut Criterion) {
     group.bench_function("one-by-one",
                          |b| b.iter(|| {
                              for byte in bytes {
-                                 let _ = black_box(classifier.classify_one(*byte));
+                                 let _ = black_box(accept_chars.contains(byte));
                              }
                          }));
+    group.bench_function("generic",
+                         |b| b.iter_batched(|| bytes.clone(), |mut bytes| {
+                             black_box(classifier.classify_generic(&mut bytes));
+                         }, BatchSize::SmallInput));
+    group.bench_function("vector",
+                         |b| b.iter_batched(|| bytes.clone(), |mut bytes| {
+                             black_box(classifier.classify(&mut bytes));
+                         }, BatchSize::SmallInput));
     group.finish();
 }
 
