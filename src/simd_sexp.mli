@@ -1,4 +1,4 @@
-open! Core_kernel
+open! Core
 
 external extract_structural_indices
   :  Bigstring.t

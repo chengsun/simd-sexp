@@ -117,4 +117,12 @@ mod tests {
         run_test(&accept[..], true);
     }
 
+    #[test]
+    fn pattern_5() {
+        let accept: Vec<bool> = (0u8..=255).map(|i| {
+            " \t\r\n()\\\"".as_bytes().contains(&i)
+        }).collect();
+        run_test(&accept[..], true);
+    }
+
 }

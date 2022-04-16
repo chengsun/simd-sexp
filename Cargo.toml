@@ -2,17 +2,17 @@
 name = "simd-sexp"
 version = "0.1.0"
 authors = ["Cheng Sun <_@chengsun.uk>"]
-edition = "2018"
+edition = "2021"
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["lib", "staticlib"]
 
 [dependencies]
-ocaml = "0.19"
+ocaml = "0.22"
 
 [dev-dependencies]
 criterion = "0.3"
-rand = "0.7"
+rand = "0.8"
 
 [[bench]]
 name = "find_quote_transitions"
@@ -20,6 +20,10 @@ harness = false
 
 [[bench]]
 name = "start_stop_transitions"
+harness = false
+
+[[bench]]
+name = "vector_classifier"
 harness = false
 
 [[bench]]

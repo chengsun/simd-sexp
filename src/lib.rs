@@ -1,6 +1,6 @@
 pub mod find_quote_transitions;
-pub mod extract;
 pub mod ranges;
+pub mod extract;
 pub mod start_stop_transitions;
 pub mod utils;
 pub mod vector_classifier;

@@ -1,4 +1,4 @@
-open! Core_kernel
+open! Core
 
 let extract_structural_indices ~input ~output ~output_index ~start_offset =
   assert (Bigarray.Array1.dim output >= output_index + 64);
