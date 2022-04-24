@@ -15,4 +15,6 @@
  (libraries core_kernel)
  (foreign_archives simd_sexp)
  (c_library_flags
-  (-lpthread -lc -lm)))
+  (-lpthread -lc -lm))
+ (preprocess
+  (pps ppx_expect ppx_jane)))

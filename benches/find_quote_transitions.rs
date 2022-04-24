@@ -1,6 +1,9 @@
 use criterion::*;
 use simd_sexp::*;
 
+#[inline(never)]
+fn blahblahfoo() {}
+
 fn bench(c: &mut Criterion) {
     let a = rand::random::<u64>();
     let b = rand::random::<u64>();
@@ -11,7 +14,11 @@ fn bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("find_quote_transitions");
     group.throughput(Throughput::Bytes(8));
     group.bench_function("runtime-detect",
-                         |b| b.iter(|| black_box(find_quote_transitions::find_quote_transitions(unescaped, escaped, prev_state))));
+                         |b| b.iter(|| {
+                             black_box(find_quote_transitions::find_quote_transitions(unescaped, escaped, prev_state));
+                             black_box(blahblahfoo());
+                         }
+                                    ));
     group.finish();
 }
 
