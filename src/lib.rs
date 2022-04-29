@@ -1,6 +1,6 @@
+pub mod extract;
 pub mod find_quote_transitions;
 pub mod ranges;
-pub mod extract;
 pub mod start_stop_transitions;
 pub mod utils;
 pub mod vector_classifier;
@@ -20,6 +20,10 @@ use crate::ranges::*;
 use crate::utils::*;
 
 struct State {
+    /* constants */
+    whitespace_classifier: Box<dyn vector_classifier::Classifier>,
+
+    /* varying */
     escape: bool,
     quote: bool,
     bm_atom: u64,
@@ -27,8 +31,11 @@ struct State {
 }
 
 impl State {
-    fn init() -> State {
+    fn new() -> State {
+        let whitespace_classifier = vector_classifier::new_via_runtime_detection(vector_classifier::LookupTables::from_accepting_chars(b" \t\n").unwrap());
+
         State {
+            whitespace_classifier,
             escape: false,
             quote: false,
             bm_atom: 0u64,
@@ -139,10 +146,10 @@ unsafe fn structural_indices_bitmask(input_buf: &[u8], state: &mut State) -> u64
     special
 }
 
-fn extract_structural_indices(input: &[u8], output: &mut [usize], start_offset: usize) -> usize {
+pub fn extract_structural_indices(input: &[u8], output: &mut [usize], start_offset: usize) -> usize {
     let n = input.len();
 
-    let mut state = State::init();
+    let mut state = State::new();
 
     let mut output_write = 0;
 
