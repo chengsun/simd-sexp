@@ -3,64 +3,120 @@ use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
-use crate::xor_masked_adjacent::*;
+use crate::clmul;
+use crate::xor_masked_adjacent;
 
-pub fn start_stop_transitions(start: u64, stop: u64, prev_state: bool) -> (u64, bool) {
-    assert!(start & stop == 0);
+pub trait StartStopTransitions {
+    fn start_stop_transitions(&self, start: u64, stop: u64, prev_state: bool) -> (u64, bool);
+}
 
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    if is_x86_feature_detected!("bmi2") {
-        return unsafe { start_stop_transitions_bmi2(start, stop, prev_state) };
+#[derive(Copy, Clone, Debug)]
+pub struct Generic<ClmulT, XorMaskedAdjacentT> {
+    clmul: ClmulT,
+    xor_masked_adjacent: XorMaskedAdjacentT,
+}
+
+impl<ClmulT, XorMaskedAdjacentT> Generic<ClmulT, XorMaskedAdjacentT> {
+    pub fn new(clmul: ClmulT, xor_masked_adjacent: XorMaskedAdjacentT) -> Self {
+        Generic { clmul, xor_masked_adjacent }
+    }
+}
+
+impl<ClmulT: clmul::Clmul, XorMaskedAdjacentT: xor_masked_adjacent::XorMaskedAdjacent> StartStopTransitions for Generic<ClmulT, XorMaskedAdjacentT> {
+    fn start_stop_transitions(&self, start: u64, stop: u64, prev_state: bool) -> (u64, bool) {
+        let transitions = (!start.wrapping_sub(stop | !prev_state as u64) & start) ^ (!stop.wrapping_sub(start | prev_state as u64) & stop);
+        let ranges = self.clmul.clmul(transitions);
+        let next_transitions = self.xor_masked_adjacent.xor_masked_adjacent(ranges, start | stop, false);
+        let next_state = prev_state ^ ((next_transitions.count_ones() & 1) != 0);
+        return (next_transitions, next_state);
+    }
+}
+
+pub struct Bmi2 { _feature_detected_witness: () }
+
+impl Bmi2 {
+    pub fn new() -> Option<Self> {
+        if is_x86_feature_detected!("bmi2") {
+            return Some(Bmi2{ _feature_detected_witness: () });
+        }
+        None
     }
 
-    start_stop_transitions_generic(start, stop, prev_state)
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[target_feature(enable = "bmi2")]
+    unsafe fn _start_stop_transitions(&self, start: u64, stop: u64, prev_state: bool) -> (u64, bool) {
+        assert!(start & stop == 0);
+
+        let mask = start | stop;
+        let compressed_start = _pext_u64(start, mask);
+        let compressed_transitions = compressed_start ^ (compressed_start << 1 | prev_state as u64);
+        let next_transitions = _pdep_u64(compressed_transitions, mask);
+        let next_state = prev_state ^ ((next_transitions.count_ones() & 1) != 0);
+        return (next_transitions, next_state);
+    }
 }
 
-pub fn start_stop_transitions_generic(start: u64, stop: u64, prev_state: bool) -> (u64, bool) {
-    use crate::utils::*;
-    let transitions = (!start.wrapping_sub(stop | !prev_state as u64) & start) ^ (!stop.wrapping_sub(start | prev_state as u64) & stop);
-    let ranges = unsafe { clmul(transitions) };
-    let next_transitions = xor_masked_adjacent(ranges, start | stop, false);
-    let next_state = prev_state ^ ((next_transitions.count_ones() & 1) != 0);
-    return (next_transitions, next_state);
+impl StartStopTransitions for Bmi2 {
+    fn start_stop_transitions(&self, start: u64, stop: u64, prev_state: bool) -> (u64, bool) {
+        let () = self._feature_detected_witness;
+        unsafe { self._start_stop_transitions(start, stop, prev_state) }
+    }
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[target_feature(enable = "bmi2")]
-pub unsafe fn start_stop_transitions_bmi2(start: u64, stop: u64, prev_state: bool) -> (u64, bool) {
-    let mask = start | stop;
-    let compressed_start = _pext_u64(start, mask);
-    let compressed_transitions = compressed_start ^ (compressed_start << 1 | prev_state as u64);
-    let next_transitions = _pdep_u64(compressed_transitions, mask);
-    let next_state = prev_state ^ ((next_transitions.count_ones() & 1) != 0);
-    return (next_transitions, next_state);
+impl StartStopTransitions for Box<dyn StartStopTransitions> {
+    fn start_stop_transitions(&self, start: u64, stop: u64, prev_state: bool) -> (u64, bool) {
+        (**self).start_stop_transitions(start, stop, prev_state)
+    }
 }
 
+pub fn runtime_detect() -> Box<dyn StartStopTransitions> {
+    match Bmi2::new () {
+        None => (),
+        Some(start_stop_transitions) => { return Box::new(start_stop_transitions); }
+    }
+    Box::new(Generic::new(clmul::runtime_detect(), xor_masked_adjacent::runtime_detect()))
+}
 
 #[cfg(test)]
 mod start_stop_transitions_tests {
     use super::*;
     use crate::utils::*;
 
+    trait Testable {
+        fn run_test(&self, start: u64, stop: u64, prev_state: bool, output: u64);
+    }
+
+    impl<T: StartStopTransitions> Testable for T {
+        fn run_test(&self, start: u64, stop: u64, prev_state: bool, output: u64) {
+            let start = bitrev64(start);
+            let stop = bitrev64(stop);
+            let output = bitrev64(output);
+            let (actual_output, actual_next_state) = self.start_stop_transitions(start, stop, prev_state);
+            let next_state = prev_state ^ (output.count_ones() & 1 != 0);
+            if output != actual_output || next_state != actual_next_state {
+                print!("start:      ");
+                print_bitmask_le(start, 64);
+                print!("stop:       ");
+                print_bitmask_le(stop, 64);
+                println!("prev_state: {}", prev_state);
+                print!("expect out: ");
+                print_bitmask_le(output, 64);
+                print!("actual out: ");
+                print_bitmask_le(actual_output, 64);
+                println!("expect next_state: {}", next_state);
+                println!("actual next_state: {}", actual_next_state);
+                panic!("start_stop_transitions test failed");
+            }
+        }
+    }
+
     fn run_test(start: u64, stop: u64, prev_state: bool, output: u64) {
-        let start = bitrev64(start);
-        let stop = bitrev64(stop);
-        let output = bitrev64(output);
-        let (actual_output, actual_next_state) = start_stop_transitions(start, stop, prev_state);
-        let next_state = prev_state ^ (output.count_ones() & 1 != 0);
-        if output != actual_output || next_state != actual_next_state {
-            print!("start:      ");
-            print_bitmask_le(start, 64);
-            print!("stop:       ");
-            print_bitmask_le(stop, 64);
-            println!("prev_state: {}", prev_state);
-            print!("expect out: ");
-            print_bitmask_le(output, 64);
-            print!("actual out: ");
-            print_bitmask_le(actual_output, 64);
-            println!("expect next_state: {}", next_state);
-            println!("actual next_state: {}", actual_next_state);
-            panic!("start_stop_transitions test failed");
+        let generic = Generic::new(clmul::Generic::new(), xor_masked_adjacent::Generic::new());
+        generic.run_test(start, stop, prev_state, output);
+
+        match Bmi2::new() {
+            Some(sse2_pclmulqdq) => sse2_pclmulqdq.run_test(start, stop, prev_state, output),
+            None => (),
         }
     }
 

@@ -11,6 +11,13 @@ pub struct LookupTables {
 }
 
 impl LookupTables {
+    pub fn empty() -> Self {
+        Self {
+            shuffle_table_lo: [0u8; 16],
+            shuffle_table_hi: [0u8; 16],
+        }
+    }
+
     pub fn new(accept: &[bool; 256]) -> Option<Self> {
         let mut hi = [0u16; 16];
         let mut lo = [0u16; 16];
@@ -72,6 +79,8 @@ impl LookupTables {
 }
 
 pub trait Classifier {
+    fn set_lookup_tables(&mut self, lookup_tables: &LookupTables);
+
     /// Transforms the bytes in [in_out] so that it is non-zero if the original
     /// byte matched a character in the lookup table.
     fn classify(&self, in_out: &mut [u8]);
@@ -82,12 +91,16 @@ pub struct Generic {
 }
 
 impl Generic {
-    pub fn new(lookup_tables: LookupTables) -> Self {
-        Self { lookup_tables: lookup_tables.clone() }
+    pub fn new() -> Self {
+        Self { lookup_tables: LookupTables::empty() }
     }
 }
 
 impl Classifier for Generic {
+    fn set_lookup_tables(&mut self, lookup_tables: &LookupTables) {
+        self.lookup_tables = lookup_tables.clone();
+    }
+
     fn classify(&self, in_out: &mut [u8]) {
         for i in 0..in_out.len() {
             in_out[i] =
@@ -101,19 +114,26 @@ pub struct Ssse3 {
     generic: Generic,
     shuffle_table_lo: __m128i,
     shuffle_table_hi: __m128i,
+    _feature_detected_witness: (),
 }
 
 impl Ssse3 {
-    pub unsafe fn new(lookup_tables: LookupTables) -> Self {
-        let generic = Generic::new(lookup_tables.clone());
-        let shuffle_table_lo = _mm_loadu_si128(&lookup_tables.shuffle_table_lo as *const _ as *const __m128i);
-        let shuffle_table_hi = _mm_loadu_si128(&lookup_tables.shuffle_table_hi as *const _ as *const __m128i);
-        Self { generic, shuffle_table_lo, shuffle_table_hi }
+    pub fn new() -> Option<Self> {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        if is_x86_feature_detected!("ssse3") {
+            unsafe {
+                let generic = Generic::new();
+                let shuffle_table_lo = _mm_loadu_si128(&generic.lookup_tables.shuffle_table_lo as *const _ as *const __m128i);
+                let shuffle_table_hi = _mm_loadu_si128(&generic.lookup_tables.shuffle_table_hi as *const _ as *const __m128i);
+                return Some(Self { generic, shuffle_table_lo, shuffle_table_hi, _feature_detected_witness: () });
+            }
+        }
+        None
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[target_feature(enable = "ssse3")]
-    unsafe fn classify_ssse3(&self, in_out: &mut [__m128i]) {
+    unsafe fn _classify(&self, in_out: &mut [__m128i]) {
         let lo_nibble_epi8 = _mm_set1_epi8(0xF);
 
         for i in 0..in_out.len() {
@@ -123,27 +143,33 @@ impl Ssse3 {
                     _mm_shuffle_epi8(self.shuffle_table_hi, _mm_and_si128(_mm_srli_epi16(in_out[i], 4), lo_nibble_epi8)));
         }
     }
-
 }
 
 impl Classifier for Ssse3 {
+    fn set_lookup_tables(&mut self, lookup_tables: &LookupTables) {
+        let () = self._feature_detected_witness;
+        unsafe {
+            self.generic.set_lookup_tables(lookup_tables);
+            self.shuffle_table_lo = _mm_loadu_si128(&lookup_tables.shuffle_table_lo as *const _ as *const __m128i);
+            self.shuffle_table_hi = _mm_loadu_si128(&lookup_tables.shuffle_table_hi as *const _ as *const __m128i);
+        }
+    }
+
     fn classify(&self, in_out: &mut [u8]) {
-        let (prefix, aligned, suffix) =
-            unsafe { in_out.align_to_mut::<__m128i>() };
+        let (prefix, aligned, suffix) = unsafe { in_out.align_to_mut::<__m128i>() };
         self.generic.classify(prefix);
-        unsafe { self.classify_ssse3(aligned); }
+        unsafe { self._classify(aligned); }
         self.generic.classify(suffix);
     }
 }
 
-pub fn new_via_runtime_detection(lookup_tables: LookupTables) -> Box<dyn Classifier> {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    if is_x86_feature_detected!("ssse3") {
-        unsafe {
-            return Box::new(Ssse3::new(lookup_tables));
-        }
+impl Classifier for Box<dyn Classifier> {
+    fn set_lookup_tables(&mut self, lookup_tables: &LookupTables) {
+        (**self).set_lookup_tables(lookup_tables)
     }
-    return Box::new(Generic::new(lookup_tables));
+    fn classify(&self, in_out: &mut [u8]) {
+        (**self).classify(in_out)
+    }
 }
 
 #[cfg(test)]
@@ -156,25 +182,29 @@ mod tests {
                 for i in 0u8..=255 {
                     let expected_result = accept[i as usize];
                     let generic_result = {
-                        let classifier = Generic::new(lookup_tables.clone());
+                        let mut classifier = Generic::new();
+                        classifier.set_lookup_tables(&lookup_tables);
                         let mut in_out = [i; 1];
                         classifier.classify(&mut in_out);
                         in_out[0] != 0
                     };
-                    let ssse3_result = unsafe {
-                        let classifier = Ssse3::new(lookup_tables.clone());
-                        let mut in_out = [i; 128];
-                        classifier.classify(&mut in_out);
-                        let results = in_out.map(|x| x != 0);
-                        for result in results {
-                            if result != results[0] {
-                                panic!("Expected all bytes to be the same classification");
-                            }
-                        }
-                        results[0]
-                    };
                     assert_eq!(expected_result, generic_result, "at index {}", i);
-                    assert_eq!(expected_result, ssse3_result, "at index {}", i);
+                    match Ssse3::new() {
+                        None => (),
+                        Some(mut classifier) => {
+                            classifier.set_lookup_tables(&lookup_tables);
+                            let mut in_out = [i; 128];
+                            classifier.classify(&mut in_out);
+                            let results = in_out.map(|x| x != 0);
+                            for result in results {
+                                if result != results[0] {
+                                    panic!("Expected all bytes to be the same classification");
+                                }
+                            }
+                            let ssse3_result = results[0];
+                            assert_eq!(expected_result, ssse3_result, "at index {}", i);
+                        }
+                    }
                 }
             },
             (None, false) => (),

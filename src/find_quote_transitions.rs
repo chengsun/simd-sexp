@@ -1,9 +1,11 @@
-use crate::xor_masked_adjacent::*;
+use crate::clmul;
+use crate::xor_masked_adjacent;
 
-pub fn find_quote_transitions(unescaped: u64, escaped: u64, prev_state: bool) -> (u64, bool) {
+pub fn find_quote_transitions<ClmulT: clmul::Clmul, XorMaskedAdjacentT: xor_masked_adjacent::XorMaskedAdjacent>
+    (clmul: &ClmulT, xor_masked_adjacent: &XorMaskedAdjacentT, unescaped: u64, escaped: u64, prev_state: bool) -> (u64, bool) {
     assert!(unescaped & escaped == 0);
-    let c = unsafe { crate::utils::clmul(unescaped) };
-    let d = xor_masked_adjacent(c, escaped, !prev_state);
+    let c = clmul.clmul(unescaped);
+    let d = xor_masked_adjacent.xor_masked_adjacent(c, escaped, !prev_state);
     let next_transitions = unescaped | d;
     let next_state = prev_state ^ ((next_transitions.count_ones() & 1) != 0);
     return (next_transitions, next_state);
@@ -18,7 +20,8 @@ mod find_quote_transitions_tests {
         let unescaped = bitrev64(unescaped);
         let escaped = bitrev64(escaped);
         let output = bitrev64(output);
-        let (actual_output, actual_next_state) = find_quote_transitions(unescaped, escaped, prev_state);
+        let (actual_output, actual_next_state) =
+            find_quote_transitions(&clmul::Generic::new(), &xor_masked_adjacent::Generic::new(), unescaped, escaped, prev_state);
         let next_state = prev_state ^ (output.count_ones() & 1 != 0);
         if output != actual_output || next_state != actual_next_state {
             print!("unescaped:  ");

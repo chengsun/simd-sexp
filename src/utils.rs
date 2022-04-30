@@ -4,12 +4,6 @@ use core::arch::x86::*;
 use core::arch::x86_64::*;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[target_feature(enable = "sse2,pclmulqdq")]
-pub unsafe fn clmul(input: u64) -> u64 {
-    _mm_cvtsi128_si64(_mm_clmulepi64_si128(_mm_set_epi64x(0i64, input as i64), _mm_set1_epi8(0xFFu8 as i8), 0x00)) as u64
-}
-
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 pub unsafe fn make_bitmask(lo: __m256i, hi: __m256i) -> u64 {
     (_mm256_movemask_epi8(lo) as u32 as u64) |

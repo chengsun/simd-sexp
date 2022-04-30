@@ -1,3 +1,4 @@
+pub mod clmul;
 pub mod extract;
 pub mod find_quote_transitions;
 pub mod ranges;
@@ -14,14 +15,17 @@ use core::arch::x86_64::*;
 use std::convert::TryInto;
 use std::slice;
 use ocaml::bigarray;
+use vector_classifier::Classifier;
 
 use crate::find_quote_transitions::*;
 use crate::ranges::*;
 use crate::utils::*;
 
-struct State {
+struct State<ClmulT, VectorClassifierT, XorMaskedAdjacentT> {
     /* constants */
-    whitespace_classifier: Box<dyn vector_classifier::Classifier>,
+    clmul: ClmulT,
+    whitespace_classifier: VectorClassifierT,
+    xor_masked_adjacent: XorMaskedAdjacentT,
 
     /* varying */
     escape: bool,
@@ -30,12 +34,19 @@ struct State {
     bm_whitespace: u64,
 }
 
-impl State {
-    fn new() -> State {
-        let whitespace_classifier = vector_classifier::new_via_runtime_detection(vector_classifier::LookupTables::from_accepting_chars(b" \t\n").unwrap());
+// TODO: make this not all generic...
+impl State<clmul::Generic, vector_classifier::Generic, xor_masked_adjacent::Generic> {
+    fn new() -> Self {
+        let clmul = clmul::Generic::new();
+        let lookup_tables = vector_classifier::LookupTables::from_accepting_chars(b" \t\n").unwrap();
+        let mut whitespace_classifier = vector_classifier::Generic::new();
+        whitespace_classifier.set_lookup_tables(&lookup_tables);
+        let xor_masked_adjacent = xor_masked_adjacent::Generic::new();
 
-        State {
+        Self {
+            clmul,
             whitespace_classifier,
+            xor_masked_adjacent,
             escape: false,
             quote: false,
             bm_atom: 0u64,
@@ -89,7 +100,9 @@ unsafe fn classify_one_avx2 (input: __m256i) -> ClassifyOneAvx2 {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn structural_indices_bitmask(input_buf: &[u8], state: &mut State) -> u64 {
+unsafe fn structural_indices_bitmask<ClmulT, VectorClassifierT, XorMaskedAdjacentT>(input_buf: &[u8], state: &mut State<ClmulT, VectorClassifierT, XorMaskedAdjacentT>) -> u64
+    where ClmulT: clmul::Clmul, XorMaskedAdjacentT: xor_masked_adjacent::XorMaskedAdjacent
+{
     let input_lo = _mm256_loadu_si256(input_buf[0..].as_ptr() as *const _);
     let input_hi = _mm256_loadu_si256(input_buf[32..].as_ptr() as *const _);
 
@@ -126,9 +139,9 @@ unsafe fn structural_indices_bitmask(input_buf: &[u8], state: &mut State) -> u64
     let escaped_quotes = quote_bitmask & escaped;
     let unescaped_quotes = quote_bitmask & !escaped;
     let prev_quote_state = state.quote;
-    let (quote_transitions, quote_state) = find_quote_transitions(unescaped_quotes, escaped_quotes, state.quote);
+    let (quote_transitions, quote_state) = find_quote_transitions(&state.clmul, &state.xor_masked_adjacent, unescaped_quotes, escaped_quotes, state.quote);
     state.quote = quote_state;
-    let quoted_areas = clmul(quote_transitions) ^ (if prev_quote_state { !0u64 } else { 0u64 });
+    let quoted_areas = state.clmul.clmul(quote_transitions) ^ (if prev_quote_state { !0u64 } else { 0u64 });
 
     /* print_bitmask(unescaped_quotes, 64); */
     /* print_bitmask(escaped_quotes, 64); */
