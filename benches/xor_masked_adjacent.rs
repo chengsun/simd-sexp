@@ -5,7 +5,11 @@ fn bench(c: &mut Criterion) {
     use xor_masked_adjacent::XorMaskedAdjacent;
 
     let bitstring = rand::random::<u64>();
-    let mask = rand::random::<u64>();
+    let mut mask;
+    loop {
+        mask = rand::random::<u64>();
+        if mask.count_ones() == 32 { break; }
+    }
     let lo_fill = rand::random();
 
     let mut group = c.benchmark_group("xor_masked_adjacent");
