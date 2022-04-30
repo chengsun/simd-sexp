@@ -14,6 +14,9 @@ fn bench(c: &mut Criterion) {
     let generic = xor_masked_adjacent::Generic::new();
     group.bench_function("generic",
                          |b| b.iter(|| black_box(generic.xor_masked_adjacent(bitstring, mask, lo_fill))));
+    let runtime_detect = xor_masked_adjacent::runtime_detect();
+    group.bench_function("runtime-detect",
+                         |b| b.iter(|| black_box(runtime_detect.xor_masked_adjacent(bitstring, mask, lo_fill))));
     match xor_masked_adjacent::Bmi2::new() {
         None => (),
         Some(bmi2) => {
