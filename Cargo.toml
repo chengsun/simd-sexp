@@ -15,25 +15,5 @@ criterion = "0.3"
 rand = "0.8"
 
 [[bench]]
-name = "extract"
-harness = false
-
-[[bench]]
-name = "find_quote_transitions"
-harness = false
-
-[[bench]]
-name = "lib"
-harness = false
-
-[[bench]]
-name = "start_stop_transitions"
-harness = false
-
-[[bench]]
-name = "vector_classifier"
-harness = false
-
-[[bench]]
-name = "xor_masked_adjacent"
+name = "benches"
 harness = false
