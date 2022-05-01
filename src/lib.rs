@@ -15,7 +15,6 @@ use core::arch::x86_64::*;
 use std::convert::TryInto;
 use std::slice;
 use ocaml::bigarray;
-use vector_classifier::Classifier;
 
 use crate::find_quote_transitions::*;
 use crate::ranges::*;
@@ -34,14 +33,14 @@ struct State<ClmulT, VectorClassifierT, XorMaskedAdjacentT> {
     bm_whitespace: u64,
 }
 
-// TODO: make this not all generic...
-impl State<clmul::Generic, vector_classifier::Generic, xor_masked_adjacent::Generic> {
-    fn new() -> Self {
-        let clmul = clmul::Generic::new();
+impl<ClmulT: clmul::Clmul,
+     VectorClassifierT: vector_classifier::Classifier,
+     XorMaskedAdjacentT: xor_masked_adjacent::XorMaskedAdjacent>
+    State<ClmulT, VectorClassifierT, XorMaskedAdjacentT> {
+        fn new<VectorClassifierBuilderT: vector_classifier::ClassifierBuilder<Classifier = VectorClassifierT>>
+            (clmul: ClmulT, vector_classifier_builder: VectorClassifierBuilderT, xor_masked_adjacent: XorMaskedAdjacentT) -> Self {
         let lookup_tables = vector_classifier::LookupTables::from_accepting_chars(b" \t\n").unwrap();
-        let mut whitespace_classifier = vector_classifier::Generic::new();
-        whitespace_classifier.set_lookup_tables(&lookup_tables);
-        let xor_masked_adjacent = xor_masked_adjacent::Generic::new();
+        let whitespace_classifier = vector_classifier_builder.build(&lookup_tables);
 
         Self {
             clmul,
@@ -162,7 +161,10 @@ unsafe fn structural_indices_bitmask<ClmulT, VectorClassifierT, XorMaskedAdjacen
 pub fn extract_structural_indices(input: &[u8], output: &mut [usize], start_offset: usize) -> usize {
     let n = input.len();
 
-    let mut state = State::new();
+    let clmul = clmul::runtime_detect();
+    let vector_classifier_builder = vector_classifier::runtime_detect();
+    let xor_masked_adjacent = xor_masked_adjacent::runtime_detect();
+    let mut state = State::new(clmul, vector_classifier_builder, xor_masked_adjacent);
 
     let mut output_write = 0;
 

@@ -79,28 +79,23 @@ impl LookupTables {
 }
 
 pub trait Classifier {
-    fn set_lookup_tables(&mut self, lookup_tables: &LookupTables);
-
     /// Transforms the bytes in [in_out] so that it is non-zero if the original
     /// byte matched a character in the lookup table.
     fn classify(&self, in_out: &mut [u8]);
 }
 
-pub struct Generic {
+#[derive(Clone, Debug)]
+pub struct GenericClassifier {
     lookup_tables: LookupTables,
 }
 
-impl Generic {
-    pub fn new() -> Self {
-        Self { lookup_tables: LookupTables::empty() }
+impl GenericClassifier {
+    fn new(lookup_tables: &LookupTables) -> Self {
+        Self { lookup_tables: lookup_tables.clone() }
     }
 }
 
-impl Classifier for Generic {
-    fn set_lookup_tables(&mut self, lookup_tables: &LookupTables) {
-        self.lookup_tables = lookup_tables.clone();
-    }
-
+impl Classifier for GenericClassifier {
     fn classify(&self, in_out: &mut [u8]) {
         for i in 0..in_out.len() {
             in_out[i] =
@@ -110,25 +105,20 @@ impl Classifier for Generic {
     }
 }
 
-pub struct Ssse3 {
-    generic: Generic,
+#[derive(Clone, Debug)]
+pub struct Ssse3Classifier {
+    generic: GenericClassifier,
     shuffle_table_lo: __m128i,
     shuffle_table_hi: __m128i,
     _feature_detected_witness: (),
 }
 
-impl Ssse3 {
-    pub fn new() -> Option<Self> {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if is_x86_feature_detected!("ssse3") {
-            unsafe {
-                let generic = Generic::new();
-                let shuffle_table_lo = _mm_loadu_si128(&generic.lookup_tables.shuffle_table_lo as *const _ as *const __m128i);
-                let shuffle_table_hi = _mm_loadu_si128(&generic.lookup_tables.shuffle_table_hi as *const _ as *const __m128i);
-                return Some(Self { generic, shuffle_table_lo, shuffle_table_hi, _feature_detected_witness: () });
-            }
-        }
-        None
+impl Ssse3Classifier {
+    unsafe fn new(lookup_tables: &LookupTables) -> Self {
+        let generic = GenericClassifier::new(lookup_tables);
+        let shuffle_table_lo = _mm_loadu_si128(&generic.lookup_tables.shuffle_table_lo as *const _ as *const __m128i);
+        let shuffle_table_hi = _mm_loadu_si128(&generic.lookup_tables.shuffle_table_hi as *const _ as *const __m128i);
+        return Self { generic, shuffle_table_lo, shuffle_table_hi, _feature_detected_witness: () };
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -145,16 +135,7 @@ impl Ssse3 {
     }
 }
 
-impl Classifier for Ssse3 {
-    fn set_lookup_tables(&mut self, lookup_tables: &LookupTables) {
-        let () = self._feature_detected_witness;
-        unsafe {
-            self.generic.set_lookup_tables(lookup_tables);
-            self.shuffle_table_lo = _mm_loadu_si128(&lookup_tables.shuffle_table_lo as *const _ as *const __m128i);
-            self.shuffle_table_hi = _mm_loadu_si128(&lookup_tables.shuffle_table_hi as *const _ as *const __m128i);
-        }
-    }
-
+impl Classifier for Ssse3Classifier {
     fn classify(&self, in_out: &mut [u8]) {
         let (prefix, aligned, suffix) = unsafe { in_out.align_to_mut::<__m128i>() };
         self.generic.classify(prefix);
@@ -164,12 +145,72 @@ impl Classifier for Ssse3 {
 }
 
 impl Classifier for Box<dyn Classifier> {
-    fn set_lookup_tables(&mut self, lookup_tables: &LookupTables) {
-        (**self).set_lookup_tables(lookup_tables)
-    }
     fn classify(&self, in_out: &mut [u8]) {
         (**self).classify(in_out)
     }
+}
+
+pub trait ClassifierBuilder {
+    type Classifier;
+    fn build(&self, lookup_tables: &LookupTables) -> Self::Classifier;
+}
+
+pub struct GenericBuilder {}
+
+impl GenericBuilder {
+    pub fn new() -> Self {
+        GenericBuilder {}
+    }
+}
+
+impl ClassifierBuilder for GenericBuilder {
+    type Classifier = GenericClassifier;
+    fn build(&self, lookup_tables: &LookupTables) -> Self::Classifier {
+        GenericClassifier::new(lookup_tables)
+    }
+}
+
+pub struct Ssse3Builder {
+    _feature_detected_witness: (),
+}
+
+impl Ssse3Builder {
+    pub fn new() -> Option<Self> {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        if is_x86_feature_detected!("ssse3") {
+            return Some(Ssse3Builder { _feature_detected_witness: () });
+        }
+        None
+    }
+}
+
+impl ClassifierBuilder for Ssse3Builder {
+    type Classifier = Ssse3Classifier;
+    fn build(&self, lookup_tables: &LookupTables) -> Self::Classifier {
+        let _ = self._feature_detected_witness;
+        unsafe { Ssse3Classifier::new(lookup_tables) }
+    }
+}
+
+pub struct RuntimeDetectBuilder {}
+
+impl RuntimeDetectBuilder {
+    pub fn new() -> Self { RuntimeDetectBuilder {} }
+}
+
+impl ClassifierBuilder for RuntimeDetectBuilder {
+    type Classifier = Box<dyn Classifier>;
+    fn build(&self, lookup_tables: &LookupTables) -> Self::Classifier {
+        match Ssse3Builder::new () {
+            None => (),
+            Some(builder) => { return Box::new(builder.build(lookup_tables)); }
+        }
+        Box::new(GenericBuilder::new().build(lookup_tables))
+    }
+}
+
+pub fn runtime_detect() -> RuntimeDetectBuilder {
+    RuntimeDetectBuilder::new()
 }
 
 #[cfg(test)]
@@ -182,17 +223,16 @@ mod tests {
                 for i in 0u8..=255 {
                     let expected_result = accept[i as usize];
                     let generic_result = {
-                        let mut classifier = Generic::new();
-                        classifier.set_lookup_tables(&lookup_tables);
+                        let classifier = GenericBuilder::new().build(&lookup_tables);
                         let mut in_out = [i; 1];
                         classifier.classify(&mut in_out);
                         in_out[0] != 0
                     };
                     assert_eq!(expected_result, generic_result, "at index {}", i);
-                    match Ssse3::new() {
+                    match Ssse3Builder::new() {
                         None => (),
-                        Some(mut classifier) => {
-                            classifier.set_lookup_tables(&lookup_tables);
+                        Some(classifier_builder) => {
+                            let classifier = classifier_builder.build(&lookup_tables);
                             let mut in_out = [i; 128];
                             classifier.classify(&mut in_out);
                             let results = in_out.map(|x| x != 0);
