@@ -114,6 +114,8 @@ pub struct Ssse3Classifier {
 }
 
 impl Ssse3Classifier {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[target_feature(enable = "sse2")]
     unsafe fn new(lookup_tables: &LookupTables) -> Self {
         let generic = GenericClassifier::new(lookup_tables);
         let shuffle_table_lo = _mm_loadu_si128(&generic.lookup_tables.shuffle_table_lo as *const _ as *const __m128i);
@@ -122,7 +124,7 @@ impl Ssse3Classifier {
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    #[target_feature(enable = "ssse3")]
+    #[target_feature(enable = "sse2,ssse3")]
     unsafe fn _classify(&self, in_out: &mut [__m128i]) {
         let lo_nibble_epi8 = _mm_set1_epi8(0xF);
 
@@ -138,6 +140,49 @@ impl Ssse3Classifier {
 impl Classifier for Ssse3Classifier {
     fn classify(&self, in_out: &mut [u8]) {
         let (prefix, aligned, suffix) = unsafe { in_out.align_to_mut::<__m128i>() };
+        self.generic.classify(prefix);
+        unsafe { self._classify(aligned); }
+        self.generic.classify(suffix);
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Avx2Classifier {
+    generic: GenericClassifier,
+    shuffle_table_lo: __m256i,
+    shuffle_table_hi: __m256i,
+    _feature_detected_witness: (),
+}
+
+impl Avx2Classifier {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[target_feature(enable = "avx,avx2")]
+    unsafe fn new(lookup_tables: &LookupTables) -> Self {
+        let generic = GenericClassifier::new(lookup_tables);
+        let shuffle_table_lo_128 = _mm_loadu_si128(&generic.lookup_tables.shuffle_table_lo as *const _ as *const __m128i);
+        let shuffle_table_lo = _mm256_inserti128_si256(_mm256_castsi128_si256(shuffle_table_lo_128), shuffle_table_lo_128, 1);
+        let shuffle_table_hi_128 = _mm_loadu_si128(&generic.lookup_tables.shuffle_table_hi as *const _ as *const __m128i);
+        let shuffle_table_hi = _mm256_inserti128_si256(_mm256_castsi128_si256(shuffle_table_hi_128), shuffle_table_hi_128, 1);
+        return Self { generic, shuffle_table_lo, shuffle_table_hi, _feature_detected_witness: () };
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[target_feature(enable = "avx,avx2")]
+    unsafe fn _classify(&self, in_out: &mut [__m256i]) {
+        let lo_nibble_epi8 = _mm256_set1_epi8(0xF);
+
+        for i in 0..in_out.len() {
+            in_out[i] =
+                _mm256_and_si256(
+                    _mm256_shuffle_epi8(self.shuffle_table_lo, _mm256_and_si256(in_out[i], lo_nibble_epi8)),
+                    _mm256_shuffle_epi8(self.shuffle_table_hi, _mm256_and_si256(_mm256_srli_epi16(in_out[i], 4), lo_nibble_epi8)));
+        }
+    }
+}
+
+impl Classifier for Avx2Classifier {
+    fn classify(&self, in_out: &mut [u8]) {
+        let (prefix, aligned, suffix) = unsafe { in_out.align_to_mut::<__m256i>() };
         self.generic.classify(prefix);
         unsafe { self._classify(aligned); }
         self.generic.classify(suffix);
@@ -177,7 +222,7 @@ pub struct Ssse3Builder {
 impl Ssse3Builder {
     pub fn new() -> Option<Self> {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if is_x86_feature_detected!("ssse3") {
+        if is_x86_feature_detected!("sse2") && is_x86_feature_detected!("ssse3") {
             return Some(Ssse3Builder { _feature_detected_witness: () });
         }
         None
@@ -192,6 +237,28 @@ impl ClassifierBuilder for Ssse3Builder {
     }
 }
 
+pub struct Avx2Builder {
+    _feature_detected_witness: (),
+}
+
+impl Avx2Builder {
+    pub fn new() -> Option<Self> {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        if is_x86_feature_detected!("sse2") && is_x86_feature_detected!("avx2") {
+            return Some(Avx2Builder { _feature_detected_witness: () });
+        }
+        None
+    }
+}
+
+impl ClassifierBuilder for Avx2Builder {
+    type Classifier = Avx2Classifier;
+    fn build(&self, lookup_tables: &LookupTables) -> Self::Classifier {
+        let _ = self._feature_detected_witness;
+        unsafe { Avx2Classifier::new(lookup_tables) }
+    }
+}
+
 pub struct RuntimeDetectBuilder {}
 
 impl RuntimeDetectBuilder {
@@ -201,6 +268,10 @@ impl RuntimeDetectBuilder {
 impl ClassifierBuilder for RuntimeDetectBuilder {
     type Classifier = Box<dyn Classifier>;
     fn build(&self, lookup_tables: &LookupTables) -> Self::Classifier {
+        match Avx2Builder::new () {
+            None => (),
+            Some(builder) => { return Box::new(builder.build(lookup_tables)); }
+        }
         match Ssse3Builder::new () {
             None => (),
             Some(builder) => { return Box::new(builder.build(lookup_tables)); }
@@ -229,7 +300,25 @@ mod tests {
                         in_out[0] != 0
                     };
                     assert_eq!(expected_result, generic_result, "at index {}", i);
+
                     match Ssse3Builder::new() {
+                        None => (),
+                        Some(classifier_builder) => {
+                            let classifier = classifier_builder.build(&lookup_tables);
+                            let mut in_out = [i; 128];
+                            classifier.classify(&mut in_out);
+                            let results = in_out.map(|x| x != 0);
+                            for result in results {
+                                if result != results[0] {
+                                    panic!("Expected all bytes to be the same classification");
+                                }
+                            }
+                            let ssse3_result = results[0];
+                            assert_eq!(expected_result, ssse3_result, "at index {}", i);
+                        }
+                    }
+
+                    match Avx2Builder::new() {
                         None => (),
                         Some(classifier_builder) => {
                             let classifier = classifier_builder.build(&lookup_tables);

@@ -150,7 +150,7 @@ fn bench_start_stop_transitions(c: &mut Criterion) {
 
 fn bench_vector_classifier(c: &mut Criterion) {
     use simd_sexp::vector_classifier::{Classifier, ClassifierBuilder};
-    let accepting_chars = b" \t\r\n()\\\"";
+    let accepting_chars = b" \t\n";
     let lookup_tables = vector_classifier::LookupTables::from_accepting_chars(accepting_chars).unwrap();
 
     let mut naive_classifier: HashSet<u8> = HashSet::new();
@@ -184,9 +184,19 @@ fn bench_vector_classifier(c: &mut Criterion) {
         None => (),
         Some(ssse3_builder) => {
             let ssse3_classifier = ssse3_builder.build(&lookup_tables);
-            group.bench_function("vector",
+            group.bench_function("ssse3",
                                  |b| b.iter_batched(|| bytes.clone(), |mut bytes| {
                                      black_box(ssse3_classifier.classify(&mut bytes));
+                                 }, BatchSize::SmallInput));
+        }
+    }
+    match vector_classifier::Avx2Builder::new() {
+        None => (),
+        Some(avx2_builder) => {
+            let avx2_classifier = avx2_builder.build(&lookup_tables);
+            group.bench_function("avx2",
+                                 |b| b.iter_batched(|| bytes.clone(), |mut bytes| {
+                                     black_box(avx2_classifier.classify(&mut bytes));
                                  }, BatchSize::SmallInput));
         }
     }
