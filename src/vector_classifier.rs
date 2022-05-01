@@ -115,7 +115,7 @@ pub struct Ssse3Classifier {
 
 impl Ssse3Classifier {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    #[target_feature(enable = "sse2")]
+    #[target_feature(enable = "sse2,ssse3")]
     unsafe fn new(lookup_tables: &LookupTables) -> Self {
         let generic = GenericClassifier::new(lookup_tables);
         let shuffle_table_lo = _mm_loadu_si128(&generic.lookup_tables.shuffle_table_lo as *const _ as *const __m128i);
