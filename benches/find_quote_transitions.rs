@@ -16,6 +16,15 @@ fn bench(c: &mut Criterion) {
                          |b| b.iter(|| black_box(find_quote_transitions::find_quote_transitions(
                              &generic_clmul, &generic_xor_masked_adjacent,
                              unescaped, escaped, prev_state))));
+    match (clmul::Sse2Pclmulqdq::new(), xor_masked_adjacent::Bmi2::new()) {
+        (Some(clmul), Some(xor_masked_adjacent)) => {
+            group.bench_function("haswell",
+                                 |b| b.iter(|| black_box(find_quote_transitions::find_quote_transitions(
+                                     &clmul, &xor_masked_adjacent,
+                                     unescaped, escaped, prev_state))));
+        },
+        _ => (),
+    }
     let runtime_detect_clmul = clmul::runtime_detect();
     let runtime_detect_xor_masked_adjacent = xor_masked_adjacent::runtime_detect();
     group.bench_function("runtime-detect",
