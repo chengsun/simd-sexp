@@ -10,6 +10,13 @@ pub fn range_starts(bm: u64, prev_bm: u64) -> u64 {
 }
 
 /** input:  xxx xxx|x   x
+    output:  xx  xx|x
+ */
+pub fn range_tails(bm: u64, prev_bm: u64) -> u64 {
+    return bm & (bm << 1 | prev_bm >> 63);
+}
+
+/** input:  xxx xxx|x   x
     output:    x   |     x
 
     the end is *exclusive*, i.e. one-past-the end character-wise.
