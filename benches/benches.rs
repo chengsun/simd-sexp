@@ -158,21 +158,21 @@ fn bench_vector_classifier(c: &mut Criterion) {
         naive_classifier.insert(c);
     }
 
-    const SIZE: usize = 1000;
-    let bytes = &[0; SIZE];
+    const SIZE: usize = 64000;
+    let bytes: Vec<u8> = (0..SIZE).map(|_| 0u8).collect();
 
     let mut group = c.benchmark_group("vector_classifier");
     group.throughput(Throughput::Bytes(SIZE.try_into().unwrap()));
     group.bench_function("one-by-one-hash-set",
                          |b| b.iter(|| {
-                             for byte in bytes {
-                                 let _ = black_box(naive_classifier.contains(byte));
+                             for byte in bytes.iter() {
+                                 let _ = black_box(naive_classifier.contains(&byte));
                              }
                          }));
     group.bench_function("one-by-one",
                          |b| b.iter(|| {
-                             for byte in bytes {
-                                 let _ = black_box(accepting_chars.contains(byte));
+                             for byte in bytes.iter() {
+                                 let _ = black_box(accepting_chars.contains(&byte));
                              }
                          }));
     let generic_classifier = vector_classifier::GenericBuilder::new().build(&lookup_tables);
@@ -186,7 +186,8 @@ fn bench_vector_classifier(c: &mut Criterion) {
             let ssse3_classifier = ssse3_builder.build(&lookup_tables);
             group.bench_function("ssse3",
                                  |b| b.iter_batched(|| bytes.clone(), |mut bytes| {
-                                     black_box(ssse3_classifier.classify(&mut bytes));
+                                     ssse3_classifier.classify(&mut bytes);
+                                     black_box(bytes);
                                  }, BatchSize::SmallInput));
         }
     }
@@ -196,10 +197,12 @@ fn bench_vector_classifier(c: &mut Criterion) {
             let avx2_classifier = avx2_builder.build(&lookup_tables);
             group.bench_function("avx2",
                                  |b| b.iter_batched(|| bytes.clone(), |mut bytes| {
-                                     black_box(avx2_classifier.classify(&mut bytes));
+                                     avx2_classifier.classify(&mut bytes);
+                                     black_box(bytes);
                                  }, BatchSize::SmallInput));
         }
     }
+
     group.finish();
 }
 
