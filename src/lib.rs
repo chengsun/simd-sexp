@@ -56,6 +56,7 @@ impl<ClmulT: clmul::Clmul,
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 struct ClassifyOneAvx2 {
+    parens: __m256i,
     quote: __m256i,
     backslash: __m256i,
     whitespace: __m256i,
@@ -78,14 +79,16 @@ unsafe fn classify_one_avx2 (input: __m256i) -> ClassifyOneAvx2 {
     let whitespace = _mm256_or_si256(whitespace, tab);
     let whitespace = _mm256_or_si256(whitespace, newline);
 
+    let parens = _mm256_or_si256(lparen, rparen);
+
     let other = _mm256_set1_epi8(0xFFu8 as i8);
     let other = _mm256_andnot_si256(lparen, other);
     let other = _mm256_andnot_si256(rparen, other);
     let other = _mm256_andnot_si256(quote, other);
-    let other = _mm256_andnot_si256(backslash, other);
     let other = _mm256_andnot_si256(whitespace, other);
 
     ClassifyOneAvx2 {
+        parens,
         quote,
         backslash,
         whitespace,
@@ -93,6 +96,7 @@ unsafe fn classify_one_avx2 (input: __m256i) -> ClassifyOneAvx2 {
     }
 }
 
+// Returns a bitmask for start/end of every unquoted atom; start/end of every quoted atom; parens
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 unsafe fn structural_indices_bitmask<ClmulT, VectorClassifierT, XorMaskedAdjacentT>(input_buf: &[u8], state: &mut State<ClmulT, VectorClassifierT, XorMaskedAdjacentT>) -> u64
@@ -102,12 +106,14 @@ unsafe fn structural_indices_bitmask<ClmulT, VectorClassifierT, XorMaskedAdjacen
     let input_hi = _mm256_loadu_si256(input_buf[32..].as_ptr() as *const _);
 
     let classify_lo = classify_one_avx2(input_lo);
+    let parens_lo = classify_lo.parens;
     let quote_lo = classify_lo.quote;
     let backslash_lo = classify_lo.backslash;
     let whitespace_lo = classify_lo.whitespace;
     let other_lo = classify_lo.other;
 
     let classify_hi = classify_one_avx2(input_hi);
+    let parens_hi = classify_hi.parens;
     let quote_hi = classify_hi.quote;
     let backslash_hi = classify_hi.backslash;
     let whitespace_hi = classify_hi.whitespace;
@@ -116,6 +122,7 @@ unsafe fn structural_indices_bitmask<ClmulT, VectorClassifierT, XorMaskedAdjacen
     let bm_other = make_bitmask(other_lo, other_hi);
     let bm_whitespace = make_bitmask(whitespace_lo, whitespace_hi);
 
+    let parens_bitmask = make_bitmask(parens_lo, parens_hi);
     let quote_bitmask = make_bitmask(quote_lo, quote_hi);
 
     let bm_backslash = make_bitmask(backslash_lo, backslash_hi);
@@ -139,7 +146,7 @@ unsafe fn structural_indices_bitmask<ClmulT, VectorClassifierT, XorMaskedAdjacen
 
     let bm_atom = bm_other | bm_backslash;
 
-    let special = quote_transitions | !(quoted_areas | (range_tails(bm_atom, state.bm_atom)) | (range_tails(bm_whitespace, state.bm_whitespace)));
+    let special = quote_transitions | (!quoted_areas & (parens_bitmask | range_transitions(bm_atom, state.bm_atom)));
 
     state.bm_atom = bm_atom;
     state.bm_whitespace = bm_whitespace;

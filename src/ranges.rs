@@ -10,6 +10,13 @@ pub fn range_starts(bm: u64, prev_bm: u64) -> u64 {
 }
 
 /** input:  xxx xxx|x   x
+    output: x  xx  | x  x
+ */
+pub fn range_transitions(bm: u64, prev_bm: u64) -> u64 {
+    return range_starts(bm, prev_bm) | range_starts(!bm, !prev_bm);
+}
+
+/** input:  xxx xxx|x   x
     output:  xx  xx|x
  */
 pub fn range_tails(bm: u64, prev_bm: u64) -> u64 {
