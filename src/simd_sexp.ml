@@ -23,14 +23,22 @@ let unescape ~input ~pos ~len ~output =
   | output_len -> Some output_len
 ;;
 
+module Stack = struct
+  type t =
+    | Nil
+    | Sexp of Sexp.t * t
+    | Open of t
+  [@@deriving sexp_of]
+end
+
 module State = struct
   type t =
-    { mutable stack : Sexp.t list list
+    { mutable stack : Stack.t
     ; direct_emit : Sexp.t -> unit
     ; mutable atom_buffer : bytes
     }
 
-  let create ~direct_emit = { stack = []; direct_emit; atom_buffer = Bytes.create 128 }
+  let create ~direct_emit = { stack = Nil; direct_emit; atom_buffer = Bytes.create 128 }
 
   let process_escape_sequences t input lo hi =
     let atom_buffer =
@@ -52,8 +60,8 @@ module State = struct
       Sexp.Atom (String.sub input ~pos:previous_index ~len:(next_index - previous_index))
     in
     match t.stack with
-    | [] -> t.direct_emit the_atom
-    | stack_hd :: stack_tl -> t.stack <- (the_atom :: stack_hd) :: stack_tl
+    | Nil -> t.direct_emit the_atom
+    | stack -> t.stack <- Sexp (the_atom, stack)
   ;;
 
   let emit_atom_quoted t input previous_index next_index =
@@ -61,8 +69,8 @@ module State = struct
       Sexp.Atom (process_escape_sequences t input previous_index next_index)
     in
     match t.stack with
-    | [] -> t.direct_emit the_atom
-    | stack_hd :: stack_tl -> t.stack <- (the_atom :: stack_hd) :: stack_tl
+    | Nil -> t.direct_emit the_atom
+    | stack -> t.stack <- Sexp (the_atom, stack)
   ;;
 
   let process_one t ~input ~indices ~indices_len ~i =
@@ -72,19 +80,20 @@ module State = struct
     in
     match String.unsafe_get input (index i) with
     | '(' ->
-      t.stack <- [] :: t.stack;
+      t.stack <- Open t.stack;
       i + 1
     | ')' ->
+      let rec gather accum = function
+        | Stack.Nil -> raise_s [%sexp "Too many closing parens"]
+        | Stack.Sexp (sexp, stack) -> gather (sexp :: accum) stack
+        | Stack.Open stack ->
+          t.stack <- stack;
+          accum
+      in
+      let the_sexp = Sexp.List (gather [] t.stack) in
       (match t.stack with
-      | [] -> raise_s [%sexp "Too many closing parens"]
-      | stack_hd :: stack_tl ->
-        let the_sexp = Sexp.List (List.rev stack_hd) in
-        (match stack_tl with
-        | [] ->
-          t.direct_emit the_sexp;
-          t.stack <- stack_tl
-        | stack_2nd_hd :: stack_2nd_tl ->
-          t.stack <- (the_sexp :: stack_2nd_hd) :: stack_2nd_tl));
+      | Nil -> t.direct_emit the_sexp
+      | _ -> t.stack <- Sexp (the_sexp, t.stack));
       i + 1
     | ' ' | '\t' | '\n' -> i + 1
     | '"' ->
@@ -98,9 +107,8 @@ module State = struct
 
   let process_eof t =
     match t.stack with
-    | [] -> ()
-    | _ :: _ ->
-      raise_s [%sexp "Not enough closing parens before EOF", (t.stack : Sexp.t list list)]
+    | Nil -> ()
+    | _ -> raise_s [%sexp "Not enough closing parens before EOF", (t.stack : Stack.t)]
   ;;
 
   let process_all t ~input ~indices ~indices_len =
