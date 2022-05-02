@@ -105,18 +105,18 @@ unsafe fn structural_indices_bitmask<ClmulT, XorMaskedAdjacentT>(input_buf: &[u8
     let backslash_hi = classify_hi.backslash;
     let atom_like_hi = classify_hi.atom_like;
 
-    let parens_bitmask = make_bitmask(parens_lo, parens_hi);
-    let quote_bitmask = make_bitmask(quote_lo, quote_hi);
-    let bm_atom_like = make_bitmask(atom_like_lo, atom_like_hi);
+    let bm_parens = make_bitmask(parens_lo, parens_hi);
+    let bm_quote = make_bitmask(quote_lo, quote_hi);
     let bm_backslash = make_bitmask(backslash_lo, backslash_hi);
+    let bm_atom_like = make_bitmask(atom_like_lo, atom_like_hi);
     /* print_bitmask(bm_backslash, 64); */
     let (escaped, escape_state) = odd_range_ends(bm_backslash, state.escape);
     state.escape = escape_state;
 
     /* print_bitmask(escaped, 64); */
 
-    let escaped_quotes = quote_bitmask & escaped;
-    let unescaped_quotes = quote_bitmask & !escaped;
+    let escaped_quotes = bm_quote & escaped;
+    let unescaped_quotes = bm_quote & !escaped;
     let prev_quote_state = state.quote;
     let (quote_transitions, quote_state) = find_quote_transitions(&state.clmul, &state.xor_masked_adjacent, unescaped_quotes, escaped_quotes, state.quote);
     state.quote = quote_state;
@@ -127,7 +127,7 @@ unsafe fn structural_indices_bitmask<ClmulT, XorMaskedAdjacentT>(input_buf: &[u8
     /* print_bitmask(quote_transitions, 64); */
     /* print_bitmask(quoted_areas, 64); */
 
-    let special = quote_transitions | (!quoted_areas & (parens_bitmask | range_transitions(bm_atom_like, state.bm_atom_like)));
+    let special = quote_transitions | (!quoted_areas & (bm_parens | range_transitions(bm_atom_like, state.bm_atom_like)));
 
     state.bm_atom_like = bm_atom_like;
     /* print_bitmask(special, 64); */
