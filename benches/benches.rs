@@ -8,22 +8,20 @@ fn bench_lib(c: &mut Criterion) {
     let input_all_parens_6400 = [b'('; 6400];
     let input_all_misc_6400 = [b'x'; 6400];
 
-    let mut output_scratch = [0usize; 6400];
-
     let mut group = c.benchmark_group("lib-64");
     group.throughput(Throughput::Bytes(64));
     group.bench_function("all-parens",
-                         |b| b.iter(|| black_box(extract_structural_indices(&input_all_parens_64[..], &mut output_scratch, 0))));
+                         |b| b.iter(|| extract_structural_indices(&input_all_parens_64[..], |bit| { black_box(bit); })));
     group.bench_function("all-misc",
-                         |b| b.iter(|| black_box(extract_structural_indices(&input_all_misc_64[..], &mut output_scratch, 0))));
+                         |b| b.iter(|| extract_structural_indices(&input_all_misc_64[..], |bit| { black_box(bit); })));
     group.finish();
 
     let mut group = c.benchmark_group("lib-6400");
     group.throughput(Throughput::Bytes(6400));
     group.bench_function("all-parens",
-                         |b| b.iter(|| black_box(extract_structural_indices(&input_all_parens_6400[..], &mut output_scratch, 0))));
+                         |b| b.iter(|| extract_structural_indices(&input_all_parens_6400[..], |bit| { black_box(bit); })));
     group.bench_function("all-misc",
-                         |b| b.iter(|| black_box(extract_structural_indices(&input_all_misc_6400[..], &mut output_scratch, 0))));
+                         |b| b.iter(|| extract_structural_indices(&input_all_misc_6400[..], |bit| { black_box(bit); })));
     group.finish();
 }
 
