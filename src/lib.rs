@@ -30,7 +30,7 @@ struct State<ClmulT, VectorClassifierT, XorMaskedAdjacentT> {
     /* varying */
     escape: bool,
     quote: bool,
-    bm_atom_like: u64,
+    atom_like: bool,
 }
 
 impl<ClmulT: clmul::Clmul,
@@ -48,7 +48,7 @@ impl<ClmulT: clmul::Clmul,
             xor_masked_adjacent,
             escape: false,
             quote: false,
-            bm_atom_like: 0u64,
+            atom_like: false,
         }
     }
 }
@@ -128,9 +128,9 @@ unsafe fn structural_indices_bitmask<ClmulT, XorMaskedAdjacentT>(input_buf: &[u8
     /* print_bitmask(quote_transitions, 64); */
     /* print_bitmask(quoted_areas, 64); */
 
-    let special = quote_transitions | (!quoted_areas & (bm_parens | range_transitions(bm_atom_like, state.bm_atom_like)));
+    let special = quote_transitions | (!quoted_areas & (bm_parens | range_transitions(bm_atom_like, state.atom_like)));
 
-    state.bm_atom_like = bm_atom_like;
+    state.atom_like = bm_atom_like >> 63 != 0;
     /* print_bitmask(special, 64); */
 
     special

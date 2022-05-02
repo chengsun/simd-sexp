@@ -5,15 +5,15 @@ pub fn range_starts_single(bm: u64) -> u64 {
 /** input:  xxx xxx|x   x
     output: x   x  |    x
  */
-pub fn range_starts(bm: u64, prev_bm: u64) -> u64 {
-  return bm & !(bm << 1 | prev_bm >> 63);
+pub fn range_starts(bm: u64, prev: bool) -> u64 {
+  return bm & !(bm << 1 | prev as u64);
 }
 
 /** input:  xxx xxx|x   x
     output: x  xx  | x  x
  */
-pub fn range_transitions(bm: u64, prev_bm: u64) -> u64 {
-    return range_starts(bm, prev_bm) | range_starts(!bm, !prev_bm);
+pub fn range_transitions(bm: u64, prev: bool) -> u64 {
+    return range_starts(bm, prev) | range_starts(!bm, !prev);
 }
 
 /** input:  xxx xxx|x   x
