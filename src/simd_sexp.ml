@@ -29,16 +29,25 @@ module State = struct
   type t =
     { mutable stack : Sexp.t list list
     ; direct_emit : Sexp.t -> unit
+    ; mutable atom_buffer : Bigstring.t
     }
 
-  let create ~direct_emit = { stack = []; direct_emit }
+  let create ~direct_emit =
+    { stack = []; direct_emit; atom_buffer = Bigstring.create 128 }
+  ;;
 
-  let process_escape_sequences input lo hi =
+  let process_escape_sequences t input lo hi =
     let input = Bigstring.sub_shared input ~pos:lo ~len:(hi - lo) in
-    let buffer = Bigstring.create (hi - lo) in
-    match unescape ~input ~output:buffer with
+    if Bigstring.length t.atom_buffer < hi - lo
+    then (
+      let rec new_length len = if len >= hi - lo then len else new_length (len * 2) in
+      t.atom_buffer
+        <- Bigstring.unsafe_destroy_and_resize
+             t.atom_buffer
+             ~len:(new_length (Bigstring.length t.atom_buffer)));
+    match unescape ~input ~output:t.atom_buffer with
     | None -> raise_s [%sexp "Invalid escape sequence", (input : Bigstring.t)]
-    | Some len -> Bigstring.to_string buffer ~len
+    | Some len -> Bigstring.to_string t.atom_buffer ~len
   ;;
 
   let emit_atom t input previous_index next_index =
@@ -52,14 +61,18 @@ module State = struct
   ;;
 
   let emit_atom_quoted t input previous_index next_index =
-    let the_atom = Sexp.Atom (process_escape_sequences input previous_index next_index) in
+    let the_atom =
+      Sexp.Atom (process_escape_sequences t input previous_index next_index)
+    in
     match t.stack with
     | [] -> t.direct_emit the_atom
     | stack_hd :: stack_tl -> t.stack <- (the_atom :: stack_hd) :: stack_tl
   ;;
 
   let process_one t input indices i =
-    let index i = Int64.to_int_exn indices.{i} in
+    let[@inline always] index i =
+      Int64.to_int_trunc (Bigarray.Array1.unsafe_get indices i)
+    in
     match input.{index i} with
     | '(' ->
       t.stack <- [] :: t.stack;
