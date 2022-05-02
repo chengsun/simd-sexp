@@ -7,6 +7,8 @@ val extract_structural_indices
   -> start_offset:int
   -> int
 
+val unescape : input:Bigstring.t -> output:Bigstring.t -> int option
+
 module State : sig
   type t
 

@@ -18,6 +18,13 @@ let extract_structural_indices ~input ~output ~output_index ~start_offset =
   |> Int64.to_int_exn
 ;;
 
+external _unescape : Bigstring.t -> Bigstring.t -> int64 option = "ml_unescape"
+
+let unescape ~input ~output =
+  assert (Bigstring.length output >= Bigstring.length input);
+  _unescape input output |> Option.map ~f:Int64.to_int_exn
+;;
+
 module State = struct
   type t =
     { mutable stack : Sexp.t list list
@@ -27,35 +34,17 @@ module State = struct
   let create ~direct_emit = { stack = []; direct_emit }
 
   let process_escape_sequences input lo hi =
-    let buffer = Buffer.create (hi - lo) in
-    let escape_next = ref false in
-    for i = lo to hi - 1 do
-      if !escape_next
-      then (
-        Buffer.add_char
-          buffer
-          (match input.{i} with
-          | 'n' -> '\n'
-          | 't' -> '\t'
-          | 'r' -> '\r'
-          | ch -> ch);
-        escape_next := false)
-      else (
-        match input.{i} with
-        | '\\' -> escape_next := true
-        | _ -> Buffer.add_char buffer input.{i})
-    done;
-    if !escape_next then Buffer.add_char buffer '\\';
-    Buffer.contents buffer
+    let input = Bigstring.sub_shared input ~pos:lo ~len:(hi - lo) in
+    let buffer = Bigstring.create (hi - lo) in
+    match unescape ~input ~output:buffer with
+    | None -> raise_s [%sexp "Invalid escape sequence", (input : Bigstring.t)]
+    | Some len -> Bigstring.to_string buffer ~len
   ;;
 
   let emit_atom t input previous_index next_index =
     let the_atom =
       Sexp.Atom
-        (Bigstring.To_string.sub
-           input
-           ~pos:previous_index
-           ~len:(next_index - previous_index))
+        (Bigstring.to_string input ~pos:previous_index ~len:(next_index - previous_index))
     in
     match t.stack with
     | [] -> t.direct_emit the_atom

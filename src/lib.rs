@@ -1,5 +1,6 @@
 pub mod clmul;
 pub mod extract;
+pub mod escape;
 pub mod find_quote_transitions;
 pub mod ranges;
 pub mod start_stop_transitions;
@@ -153,7 +154,7 @@ pub fn extract_structural_indices(input: &[u8], output: &mut [usize], start_offs
     while i < n {
         let bitmask = unsafe { structural_indices_bitmask(&input[i..], &mut state) };
 
-        output_write += extract::fast(&mut output[output_write..], start_offset + i, bitmask);
+        output_write += extract::safe(&mut output[output_write..], start_offset + i, bitmask);
 
         i += 64;
     }
@@ -179,4 +180,18 @@ pub fn ml_extract_structural_indices(input: bigarray::Array1<u8>, mut output: bi
         };
     let result = extract_structural_indices(input, output, start_offset);
     result.try_into().unwrap()
+}
+
+#[ocaml::func]
+pub fn ml_unescape(input: bigarray::Array1<u8>, mut output: bigarray::Array1<u8>) -> Option<i64> {
+    use escape::Unescape;
+
+    let input = input.data();
+    let output = {
+        let data = output.data_mut();
+        unsafe { slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, data.len()) }
+    };
+    // TODO: nongeneric version
+    let unescape = escape::GenericUnescape::new();
+    unescape.unescape(input, output).map(|n| n.try_into().unwrap())
 }

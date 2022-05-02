@@ -20,10 +20,40 @@ fn bench_lib(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("lib-6400");
     group.throughput(Throughput::Bytes(6400));
-    group.bench_function("all-parens-6400",
+    group.bench_function("all-parens",
                          |b| b.iter(|| black_box(extract_structural_indices(&input_all_parens_6400[..], &mut output_scratch, 0))));
-    group.bench_function("all-misc-6400",
+    group.bench_function("all-misc",
                          |b| b.iter(|| black_box(extract_structural_indices(&input_all_misc_6400[..], &mut output_scratch, 0))));
+    group.finish();
+}
+
+fn bench_unescape(c: &mut Criterion) {
+    use escape::Unescape;
+
+    // TODO: randomise + more realistic (need to throw off branch prediction)
+    let input_all_backslash_64 = [b'\\'; 64];
+    let input_all_misc_64 = [b'x'; 64];
+    let input_all_backslash_6400 = [b'\\'; 6400];
+    let input_all_misc_6400 = [b'x'; 6400];
+
+    let mut output_scratch = [0u8; 6400];
+
+    let generic_unescape = escape::GenericUnescape::new();
+
+    let mut group = c.benchmark_group("unescape-64");
+    group.throughput(Throughput::Bytes(64));
+    group.bench_function("generic-all-backslash",
+                         |b| b.iter(|| black_box(generic_unescape.unescape(&input_all_backslash_64[..], &mut output_scratch[..]))));
+    group.bench_function("generic-all-misc",
+                         |b| b.iter(|| black_box(generic_unescape.unescape(&input_all_misc_64[..], &mut output_scratch[..]))));
+    group.finish();
+
+    let mut group = c.benchmark_group("unescape-6400");
+    group.throughput(Throughput::Bytes(6400));
+    group.bench_function("generic-all-backslash",
+                         |b| b.iter(|| black_box(generic_unescape.unescape(&input_all_backslash_6400[..], &mut output_scratch[..]))));
+    group.bench_function("generic-all-misc",
+                         |b| b.iter(|| black_box(generic_unescape.unescape(&input_all_misc_6400[..], &mut output_scratch[..]))));
     group.finish();
 }
 
@@ -234,6 +264,7 @@ fn bench_xor_masked_adjacent(c: &mut Criterion) {
 
 criterion_group!(benches,
                  bench_lib,
+                 bench_unescape,
                  bench_extract,
                  bench_find_quote_transitions,
                  bench_start_stop_transitions,
