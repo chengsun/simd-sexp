@@ -28,62 +28,58 @@ fn bench_lib(c: &mut Criterion) {
 }
 
 fn bench_extract(c: &mut Criterion) {
-    let mut output_scratch = [0usize; 1024];
+    use rand::prelude::*;
 
-    let mut group = c.benchmark_group("extract-64");
+    const SIZE: usize = 1024;
+    let mut output_scratch: Vec<usize> = (0..SIZE).map(|_| 0usize).collect();
+
+    fn generate_input(density: f64) -> u64 {
+        let mut input = 0u64;
+        let dist = rand::distributions::Bernoulli::new(density).unwrap();
+        for _ in 0..64 {
+            input = (input << 1) | (dist.sample(&mut rand::thread_rng()) as u64);
+        }
+        input
+    }
+
+    let mut group = c.benchmark_group("extract");
     group.throughput(Throughput::Bytes(64));
-    group.bench_function("fast-ones",
-                         |b| b.iter(|| black_box(extract::fast(&mut output_scratch, 0, !0u64))));
-    group.bench_function("fast-zeros",
-                         |b| b.iter(|| black_box(extract::fast(&mut output_scratch, 0, 0u64))));
-    group.bench_function("safe-ones",
-                         |b| b.iter(|| black_box(extract::safe(&mut output_scratch, 0, !0u64))));
-    group.bench_function("safe-zeros",
-                         |b| b.iter(|| black_box(extract::safe(&mut output_scratch, 0, 0u64))));
-    group.finish();
-
-    let mut group = c.benchmark_group("extract-1024");
-    group.throughput(Throughput::Bytes(1024));
-    group.bench_function("fast-ones",
-                         |b| b.iter(|| {
-                             let mut offset = 0;
-                             let mut output_i = 0;
-                             for _ in 0..16 {
-                                 output_i += extract::fast(&mut output_scratch[output_i..], offset, !0u64);
-                                 offset += 64;
-                             }
-                             let _ = black_box(output_i);
-                         } ));
-    group.bench_function("fast-zeros",
-                         |b| b.iter(|| {
-                             let mut offset = 0;
-                             let mut output_i = 0;
-                             for _ in 0..16 {
-                                 output_i += extract::fast(&mut output_scratch[output_i..], offset, 0u64);
-                                 offset += 64;
-                             }
-                             let _ = black_box(output_i);
-                         } ));
-    group.bench_function("safe-ones",
-                         |b| b.iter(|| {
-                             let mut offset = 0;
-                             let mut output_i = 0;
-                             for _ in 0..16 {
-                                 output_i += extract::safe(&mut output_scratch[output_i..], offset, !0u64);
-                                 offset += 64;
-                             }
-                             let _ = black_box(output_i);
-                         } ));
-    group.bench_function("safe-zeros",
-                         |b| b.iter(|| {
-                             let mut offset = 0;
-                             let mut output_i = 0;
-                             for _ in 0..16 {
-                                 output_i += extract::safe(&mut output_scratch[output_i..], offset, 0u64);
-                                 offset += 64;
-                             }
-                             let _ = black_box(output_i);
-                         } ));
+    group.bench_function("fast-0.05",
+                         |b| b.iter_batched(
+                             || generate_input(0.05),
+                             |input| {
+                                 black_box(extract::fast(&mut output_scratch, 0, input))
+                             }, BatchSize::SmallInput));
+    group.bench_function("fast-0.3",
+                         |b| b.iter_batched(
+                             || generate_input(0.3),
+                             |input| {
+                                 black_box(extract::fast(&mut output_scratch, 0, input))
+                             }, BatchSize::SmallInput));
+    group.bench_function("fast-0.8",
+                         |b| b.iter_batched(
+                             || generate_input(0.8),
+                             |input| {
+                                 black_box(extract::fast(&mut output_scratch, 0, input))
+                             }, BatchSize::SmallInput));
+    group.bench_function("safe-0.05",
+                         |b| b.iter_batched(
+                             || generate_input(0.05),
+                             |input| {
+                                 black_box(extract::safe(&mut output_scratch, 0, input))
+                             }, BatchSize::SmallInput));
+    group.bench_function("safe-0.3",
+                         |b| b.iter_batched(
+                             || generate_input(0.3),
+                             |input| {
+                                 black_box(extract::safe(&mut output_scratch, 0, input))
+                             }, BatchSize::SmallInput));
+    group.bench_function("safe-0.8",
+                         |b| b.iter_batched(
+                             || generate_input(0.8),
+                             |input| {
+                                 black_box(extract::safe(&mut output_scratch, 0, input))
+                             }, BatchSize::SmallInput));
     group.finish();
 }
 
