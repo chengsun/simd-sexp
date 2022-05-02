@@ -11,8 +11,12 @@ module State : sig
   type t
 
   val create : direct_emit:(Sexp.t -> unit) -> t
-  val process : t -> Bigstring.t -> int -> unit
-  val process_eof : t -> Bigstring.t -> unit
+
+  val process_all
+    :  t
+    -> Bigstring.t
+    -> (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array1.t
+    -> unit
 end
 
 val run : string -> f:(Sexp.t -> unit) -> unit

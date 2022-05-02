@@ -21,11 +21,10 @@ let extract_structural_indices ~input ~output ~output_index ~start_offset =
 module State = struct
   type t =
     { mutable stack : Sexp.t list list
-    ; mutable previous_index_if_atom : [ `None | `Naked of int | `Quoted of int ]
     ; direct_emit : Sexp.t -> unit
     }
 
-  let create ~direct_emit = { stack = []; previous_index_if_atom = `None; direct_emit }
+  let create ~direct_emit = { stack = []; direct_emit }
 
   let process_escape_sequences input lo hi =
     let buffer = Buffer.create (hi - lo) in
@@ -64,25 +63,13 @@ module State = struct
     | stack_hd :: stack_tl -> t.stack <- (the_atom :: stack_hd) :: stack_tl
   ;;
 
-  let process t input next_index =
-    let finalise_naked_atom () =
-      match t.previous_index_if_atom with
-      | `Naked previous_index ->
-        emit_atom t input previous_index next_index;
-        t.previous_index_if_atom <- `None
-      | `Quoted previous_index when Char.O.(input.{next_index} <> '"') ->
-        raise_s
-          [%sexp
-            "Invariant violated, open-quote can't be terminated by this structural char"
-            , { previous_index : int; next_index : int }]
-      | _ -> ()
-    in
-    match input.{next_index} with
+  let process_one t input indices i =
+    let index i = Int64.to_int_exn indices.{i} in
+    match input.{index i} with
     | '(' ->
-      finalise_naked_atom ();
-      t.stack <- [] :: t.stack
+      t.stack <- [] :: t.stack;
+      i + 1
     | ')' ->
-      finalise_naked_atom ();
       (match t.stack with
       | [] -> raise_s [%sexp "Too many closing parens"]
       | stack_hd :: stack_tl ->
@@ -92,43 +79,32 @@ module State = struct
           t.direct_emit the_sexp;
           t.stack <- stack_tl
         | stack_2nd_hd :: stack_2nd_tl ->
-          t.stack <- (the_sexp :: stack_2nd_hd) :: stack_2nd_tl))
-    | ' ' | '\t' | '\n' -> finalise_naked_atom ()
+          t.stack <- (the_sexp :: stack_2nd_hd) :: stack_2nd_tl));
+      i + 1
+    | ' ' | '\t' | '\n' -> i + 1
     | '"' ->
-      (match t.previous_index_if_atom with
-      | `None -> t.previous_index_if_atom <- `Quoted (next_index + 1)
-      | `Naked previous_index ->
-        emit_atom t input previous_index next_index;
-        t.previous_index_if_atom <- `Quoted (next_index + 1)
-      | `Quoted previous_index ->
-        emit_atom_quoted t input previous_index next_index;
-        t.previous_index_if_atom <- `None)
+      assert (Char.equal input.{index (i + 1)} '"');
+      emit_atom_quoted t input (index i + 1) (index (i + 1));
+      i + 2
     | _ ->
-      (match t.previous_index_if_atom with
-      | `None -> t.previous_index_if_atom <- `Naked next_index
-      | `Naked previous_index ->
-        raise_s
-          [%sexp
-            "Invariant violated, two naked atom structural indices back-to-back"
-            , { previous_index : int; next_index : int }]
-      | `Quoted previous_index ->
-        raise_s
-          [%sexp
-            "Invariant violated, naked atom structural index immediately following \
-             open-quote atom structural index"
-            , { previous_index : int; next_index : int }])
+      emit_atom t input (index i) (index (i + 1));
+      i + 1
   ;;
 
-  let process_eof t input =
-    (match t.previous_index_if_atom with
-    | `None -> ()
-    | `Naked previous_index -> emit_atom t input previous_index (Bigstring.length input)
-    | `Quoted previous_index ->
-      raise_s [%sexp "Unterminated quote", { previous_index : int }]);
+  let process_eof t =
     match t.stack with
     | [] -> ()
     | _ :: _ ->
       raise_s [%sexp "Not enough closing parens before EOF", (t.stack : Sexp.t list list)]
+  ;;
+
+  let process_all t input indices =
+    let rec loop i =
+      if i >= Bigarray.Array1.dim indices
+      then process_eof t
+      else loop (process_one t input indices i)
+    in
+    loop 0
   ;;
 end
 
@@ -139,11 +115,11 @@ let run actual_string ~f =
       (actual_string ^ String.make ((64 - (actual_length mod 64)) mod 64) ' ')
   in
   assert (Bigstring.length input mod 64 = 0);
-  let output = Bigarray.Array1.create Int64 C_layout (Bigstring.length input) in
-  let n = extract_structural_indices ~input ~output ~output_index:0 ~start_offset:0 in
+  let indices = Bigarray.Array1.create Int64 C_layout (Bigstring.length input) in
+  let n_indices =
+    extract_structural_indices ~input ~output:indices ~output_index:0 ~start_offset:0
+  in
+  let indices = Bigarray.Array1.sub indices 0 n_indices in
   let state = State.create ~direct_emit:(fun sexp -> f sexp) in
-  for i = 0 to n - 1 do
-    State.process state input (Int64.to_int_exn output.{i})
-  done;
-  State.process_eof state input
+  State.process_all state input indices
 ;;
