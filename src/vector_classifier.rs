@@ -116,7 +116,7 @@ pub struct Ssse3Classifier {
 impl Ssse3Classifier {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[target_feature(enable = "sse2,ssse3")]
-    unsafe fn new(lookup_tables: &LookupTables) -> Self {
+    pub unsafe fn new(lookup_tables: &LookupTables) -> Self {
         let generic = GenericClassifier::new(lookup_tables);
         let shuffle_table_lo = _mm_loadu_si128(&generic.lookup_tables.shuffle_table_lo as *const _ as *const __m128i);
         let shuffle_table_hi = _mm_loadu_si128(&generic.lookup_tables.shuffle_table_hi as *const _ as *const __m128i);
@@ -125,7 +125,7 @@ impl Ssse3Classifier {
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[target_feature(enable = "sse2,ssse3")]
-    unsafe fn _classify(&self, in_out: &mut [__m128i]) {
+    pub unsafe fn classify_ssse3(&self, in_out: &mut [__m128i]) {
         let lo_nibble_epi8 = _mm_set1_epi8(0xF);
 
         for i in 0..in_out.len() {
@@ -141,7 +141,7 @@ impl Classifier for Ssse3Classifier {
     fn classify(&self, in_out: &mut [u8]) {
         let (prefix, aligned, suffix) = unsafe { in_out.align_to_mut::<__m128i>() };
         self.generic.classify(prefix);
-        unsafe { self._classify(aligned); }
+        unsafe { self.classify_ssse3(aligned); }
         self.generic.classify(suffix);
     }
 }
@@ -157,7 +157,7 @@ pub struct Avx2Classifier {
 impl Avx2Classifier {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[target_feature(enable = "avx,avx2")]
-    unsafe fn new(lookup_tables: &LookupTables) -> Self {
+    pub unsafe fn new(lookup_tables: &LookupTables) -> Self {
         let generic = GenericClassifier::new(lookup_tables);
         let shuffle_table_lo_128 = _mm_loadu_si128(&generic.lookup_tables.shuffle_table_lo as *const _ as *const __m128i);
         let shuffle_table_lo = _mm256_inserti128_si256(_mm256_castsi128_si256(shuffle_table_lo_128), shuffle_table_lo_128, 1);
@@ -168,7 +168,7 @@ impl Avx2Classifier {
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[target_feature(enable = "avx,avx2")]
-    unsafe fn _classify(&self, in_out: &mut [__m256i]) {
+    pub unsafe fn classify_avx2(&self, in_out: &mut [__m256i]) {
         let lo_nibble_epi8 = _mm256_set1_epi8(0xF);
 
         for i in 0..in_out.len() {
@@ -184,7 +184,7 @@ impl Classifier for Avx2Classifier {
     fn classify(&self, in_out: &mut [u8]) {
         let (prefix, aligned, suffix) = unsafe { in_out.align_to_mut::<__m256i>() };
         self.generic.classify(prefix);
-        unsafe { self._classify(aligned); }
+        unsafe { self.classify_avx2(aligned); }
         self.generic.classify(suffix);
     }
 }

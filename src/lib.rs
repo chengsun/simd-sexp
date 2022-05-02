@@ -23,14 +23,13 @@ use crate::utils::*;
 struct State<ClmulT, VectorClassifierT, XorMaskedAdjacentT> {
     /* constants */
     clmul: ClmulT,
-    whitespace_classifier: VectorClassifierT,
+    atom_terminator_classifier: VectorClassifierT,
     xor_masked_adjacent: XorMaskedAdjacentT,
 
     /* varying */
     escape: bool,
     quote: bool,
-    bm_atom: u64,
-    bm_whitespace: u64,
+    bm_atom_like: u64,
 }
 
 impl<ClmulT: clmul::Clmul,
@@ -39,17 +38,16 @@ impl<ClmulT: clmul::Clmul,
     State<ClmulT, VectorClassifierT, XorMaskedAdjacentT> {
         fn new<VectorClassifierBuilderT: vector_classifier::ClassifierBuilder<Classifier = VectorClassifierT>>
             (clmul: ClmulT, vector_classifier_builder: VectorClassifierBuilderT, xor_masked_adjacent: XorMaskedAdjacentT) -> Self {
-        let lookup_tables = vector_classifier::LookupTables::from_accepting_chars(b" \t\n").unwrap();
-        let whitespace_classifier = vector_classifier_builder.build(&lookup_tables);
+        let lookup_tables = vector_classifier::LookupTables::from_accepting_chars(b" \t\n()\"").unwrap();
+        let atom_terminator_classifier = vector_classifier_builder.build(&lookup_tables);
 
         Self {
             clmul,
-            whitespace_classifier,
+            atom_terminator_classifier,
             xor_masked_adjacent,
             escape: false,
             quote: false,
-            bm_atom: 0u64,
-            bm_whitespace: 0u64,
+            bm_atom_like: 0u64,
         }
     }
 }
@@ -59,72 +57,57 @@ struct ClassifyOneAvx2 {
     parens: __m256i,
     quote: __m256i,
     backslash: __m256i,
-    whitespace: __m256i,
-    other: __m256i,
+    atom_like: __m256i,
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn classify_one_avx2 (input: __m256i) -> ClassifyOneAvx2 {
+unsafe fn classify_one_avx2
+    (atom_terminator_classifier: &vector_classifier::Avx2Classifier, input: __m256i) -> ClassifyOneAvx2
+{
     let lparen = _mm256_cmpeq_epi8(input, _mm256_set1_epi8('(' as i8));
     let rparen = _mm256_cmpeq_epi8(input, _mm256_set1_epi8(')' as i8));
     let quote = _mm256_cmpeq_epi8(input, _mm256_set1_epi8('"' as i8));
     let backslash = _mm256_cmpeq_epi8(input, _mm256_set1_epi8('\\' as i8));
 
-    let space = _mm256_cmpeq_epi8(input, _mm256_set1_epi8(' ' as i8));
-    let tab = _mm256_cmpeq_epi8(input, _mm256_set1_epi8('\t' as i8));
-    let newline = _mm256_cmpeq_epi8(input, _mm256_set1_epi8('\n' as i8));
-    let whitespace = _mm256_set1_epi8(0x00);
-    let whitespace = _mm256_or_si256(whitespace, space);
-    let whitespace = _mm256_or_si256(whitespace, tab);
-    let whitespace = _mm256_or_si256(whitespace, newline);
-
     let parens = _mm256_or_si256(lparen, rparen);
 
-    let other = _mm256_set1_epi8(0xFFu8 as i8);
-    let other = _mm256_andnot_si256(lparen, other);
-    let other = _mm256_andnot_si256(rparen, other);
-    let other = _mm256_andnot_si256(quote, other);
-    let other = _mm256_andnot_si256(whitespace, other);
+    let mut atom_like = input.clone();
+    atom_terminator_classifier.classify_avx2(std::slice::from_mut(&mut atom_like));
+    let atom_like = _mm256_cmpeq_epi8(atom_like, _mm256_set1_epi8(0));
 
     ClassifyOneAvx2 {
         parens,
         quote,
         backslash,
-        whitespace,
-        other,
+        atom_like,
     }
 }
 
 // Returns a bitmask for start/end of every unquoted atom; start/end of every quoted atom; parens
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn structural_indices_bitmask<ClmulT, VectorClassifierT, XorMaskedAdjacentT>(input_buf: &[u8], state: &mut State<ClmulT, VectorClassifierT, XorMaskedAdjacentT>) -> u64
+unsafe fn structural_indices_bitmask<ClmulT, XorMaskedAdjacentT>(input_buf: &[u8], state: &mut State<ClmulT, vector_classifier::Avx2Classifier, XorMaskedAdjacentT>) -> u64
     where ClmulT: clmul::Clmul, XorMaskedAdjacentT: xor_masked_adjacent::XorMaskedAdjacent
 {
     let input_lo = _mm256_loadu_si256(input_buf[0..].as_ptr() as *const _);
     let input_hi = _mm256_loadu_si256(input_buf[32..].as_ptr() as *const _);
 
-    let classify_lo = classify_one_avx2(input_lo);
+    let classify_lo = classify_one_avx2(&state.atom_terminator_classifier, input_lo);
     let parens_lo = classify_lo.parens;
     let quote_lo = classify_lo.quote;
     let backslash_lo = classify_lo.backslash;
-    let whitespace_lo = classify_lo.whitespace;
-    let other_lo = classify_lo.other;
+    let atom_like_lo = classify_lo.atom_like;
 
-    let classify_hi = classify_one_avx2(input_hi);
+    let classify_hi = classify_one_avx2(&state.atom_terminator_classifier, input_hi);
     let parens_hi = classify_hi.parens;
     let quote_hi = classify_hi.quote;
     let backslash_hi = classify_hi.backslash;
-    let whitespace_hi = classify_hi.whitespace;
-    let other_hi = classify_hi.other;
-
-    let bm_other = make_bitmask(other_lo, other_hi);
-    let bm_whitespace = make_bitmask(whitespace_lo, whitespace_hi);
+    let atom_like_hi = classify_hi.atom_like;
 
     let parens_bitmask = make_bitmask(parens_lo, parens_hi);
     let quote_bitmask = make_bitmask(quote_lo, quote_hi);
-
+    let bm_atom_like = make_bitmask(atom_like_lo, atom_like_hi);
     let bm_backslash = make_bitmask(backslash_lo, backslash_hi);
     /* print_bitmask(bm_backslash, 64); */
     let (escaped, escape_state) = odd_range_ends(bm_backslash, state.escape);
@@ -144,12 +127,9 @@ unsafe fn structural_indices_bitmask<ClmulT, VectorClassifierT, XorMaskedAdjacen
     /* print_bitmask(quote_transitions, 64); */
     /* print_bitmask(quoted_areas, 64); */
 
-    let bm_atom = bm_other | bm_backslash;
+    let special = quote_transitions | (!quoted_areas & (parens_bitmask | range_transitions(bm_atom_like, state.bm_atom_like)));
 
-    let special = quote_transitions | (!quoted_areas & (parens_bitmask | range_transitions(bm_atom, state.bm_atom)));
-
-    state.bm_atom = bm_atom;
-    state.bm_whitespace = bm_whitespace;
+    state.bm_atom_like = bm_atom_like;
     /* print_bitmask(special, 64); */
 
     special
@@ -158,9 +138,10 @@ unsafe fn structural_indices_bitmask<ClmulT, VectorClassifierT, XorMaskedAdjacen
 pub fn extract_structural_indices(input: &[u8], output: &mut [usize], start_offset: usize) -> usize {
     let n = input.len();
 
-    let clmul = clmul::runtime_detect();
-    let vector_classifier_builder = vector_classifier::runtime_detect();
-    let xor_masked_adjacent = xor_masked_adjacent::runtime_detect();
+    // TODO
+    let clmul = clmul::Sse2Pclmulqdq::new().unwrap();
+    let vector_classifier_builder = vector_classifier::Avx2Builder::new().unwrap();
+    let xor_masked_adjacent = xor_masked_adjacent::Bmi2::new().unwrap();
     let mut state = State::new(clmul, vector_classifier_builder, xor_masked_adjacent);
 
     let mut output_write = 0;
