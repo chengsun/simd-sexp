@@ -1,0 +1,3 @@
+(executable
+ (name benches)
+ (libraries core core_bench core_unix.command_unix core_unix.sys_unix simd_sexp))
