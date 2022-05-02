@@ -47,12 +47,15 @@ pub fn ml_extract_structural_indices(
 }
 
 #[ocaml::func]
-pub fn ml_unescape(input: &[u8], pos: ocaml::Uint, len: ocaml::Uint, output: &mut [u8]) -> Option<ocaml::Uint> {
+pub fn ml_unescape(input: &[u8], pos: ocaml::Uint, len: ocaml::Uint, output: &mut [u8]) -> ocaml::Int {
     use escape::Unescape;
 
     let input = &input[pos..pos+len];
 
     // TODO: nongeneric version
     let unescape = escape::GenericUnescape::new();
-    unescape.unescape(input, output)
+    match unescape.unescape(input, output) {
+        None => -1,
+        Some(output_len) => output_len.try_into().unwrap()
+    }
 }

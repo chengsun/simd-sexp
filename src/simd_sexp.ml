@@ -7,17 +7,20 @@ external _extract_structural_indices
   -> int
   -> int
   = "ml_extract_structural_indices"
+  [@@noalloc]
 
 let extract_structural_indices ~input ~output ~output_index ~start_offset =
   assert (Array.length output >= output_index + 64);
   _extract_structural_indices input output output_index start_offset
 ;;
 
-external _unescape : string -> int -> int -> bytes -> int option = "ml_unescape"
+external _unescape : string -> int -> int -> bytes -> int = "ml_unescape" [@@noalloc]
 
 let unescape ~input ~pos ~len ~output =
   assert (Bytes.length output >= len);
-  _unescape input pos len output
+  match _unescape input pos len output with
+  | -1 -> None
+  | output_len -> Some output_len
 ;;
 
 module State = struct
