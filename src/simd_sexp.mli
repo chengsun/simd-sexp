@@ -1,24 +1,19 @@
 open! Core
 
 val extract_structural_indices
-  :  input:Bigstring.t
-  -> output:(int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array1.t
+  :  input:string
+  -> output:int array
   -> output_index:int
   -> start_offset:int
   -> int
 
-val unescape : input:Bigstring.t -> output:Bigstring.t -> int option
+val unescape : input:string -> pos:int -> len:int -> output:bytes -> int option
 
 module State : sig
   type t
 
   val create : direct_emit:(Sexp.t -> unit) -> t
-
-  val process_all
-    :  t
-    -> Bigstring.t
-    -> (int64, Bigarray.int64_elt, Bigarray.c_layout) Bigarray.Array1.t
-    -> unit
+  val process_all : t -> input:string -> indices:int array -> indices_len:int -> unit
 end
 
 val run : string -> f:(Sexp.t -> unit) -> unit

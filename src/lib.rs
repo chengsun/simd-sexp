@@ -136,7 +136,7 @@ unsafe fn structural_indices_bitmask<ClmulT, XorMaskedAdjacentT>(input_buf: &[u8
     special
 }
 
-pub fn extract_structural_indices(input: &[u8], output: &mut [usize], start_offset: usize) -> usize {
+pub fn extract_structural_indices<OutF: FnMut(usize) -> ()>(input: &[u8], mut output: OutF) {
     let n = input.len();
 
     // TODO
@@ -145,53 +145,39 @@ pub fn extract_structural_indices(input: &[u8], output: &mut [usize], start_offs
     let xor_masked_adjacent = xor_masked_adjacent::Bmi2::new().unwrap();
     let mut state = State::new(clmul, vector_classifier_builder, xor_masked_adjacent);
 
-    let mut output_write = 0;
-
     assert!(n % 64 == 0);
-    assert!(output.len() >= n);
 
     let mut i = 0;
     while i < n {
         let bitmask = unsafe { structural_indices_bitmask(&input[i..], &mut state) };
-
-        output_write += extract::safe(&mut output[output_write..], start_offset + i, bitmask);
-
+        extract::safe_generic(|bit_offset| { output(i + bit_offset) }, bitmask);
         i += 64;
     }
+}
 
-    output_write
+#[ocaml::func(runtime)]
+pub fn ml_extract_structural_indices(
+    input: &[u8],
+    mut output: ocaml::Array<ocaml::Uint>,
+    mut output_index: ocaml::Uint,
+    start_offset: ocaml::Uint)
+    -> ocaml::Uint
+{
+    assert!(output.len() >= output_index + input.len());
+    extract_structural_indices(input, |bit_offset| {
+        unsafe { output.set_unchecked(runtime, output_index, start_offset + bit_offset); }
+        output_index += 1;
+    });
+    output_index
 }
 
 #[ocaml::func]
-pub fn ml_extract_structural_indices(input: bigarray::Array1<u8>, mut output: bigarray::Array1<i64>, start_offset: i64) -> i64 {
-    let input = input.data();
-    let output =
-        if cfg!(target_pointer_width = "64") {
-            let data = output.data_mut();
-            unsafe { slice::from_raw_parts_mut(data.as_mut_ptr() as *mut usize, data.len()) }
-        } else {
-            unimplemented!()
-        };
-    let start_offset =
-        if cfg!(target_pointer_width = "64") {
-            start_offset as usize
-        } else {
-            unimplemented!()
-        };
-    let result = extract_structural_indices(input, output, start_offset);
-    result.try_into().unwrap()
-}
-
-#[ocaml::func]
-pub fn ml_unescape(input: bigarray::Array1<u8>, mut output: bigarray::Array1<u8>) -> Option<i64> {
+pub fn ml_unescape(input: &[u8], pos: ocaml::Uint, len: ocaml::Uint, output: &mut [u8]) -> Option<ocaml::Uint> {
     use escape::Unescape;
 
-    let input = input.data();
-    let output = {
-        let data = output.data_mut();
-        unsafe { slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, data.len()) }
-    };
+    let input = &input[pos..pos+len];
+
     // TODO: nongeneric version
     let unescape = escape::GenericUnescape::new();
-    unescape.unescape(input, output).map(|n| n.try_into().unwrap())
+    unescape.unescape(input, output)
 }

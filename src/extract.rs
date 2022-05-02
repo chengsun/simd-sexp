@@ -8,6 +8,13 @@ pub fn safe(out: &mut [usize], start_offset: usize, mut bitmask: u64) -> usize {
     out_idx
 }
 
+pub fn safe_generic<F: FnMut(usize) -> ()>(mut out: F, mut bitmask: u64) {
+    while bitmask != 0 {
+        out(bitmask.trailing_zeros() as usize);
+        bitmask &= bitmask - 1;
+    }
+}
+
 pub fn fast(out: &mut [usize], start_offset: usize, mut bitmask: u64) -> usize {
     let end = bitmask.count_ones() as usize;
     let mut out_idx = 0;
