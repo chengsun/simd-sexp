@@ -90,6 +90,35 @@ let%expect_test _ =
     ^..^.^
     > "fo\\"
     > o |}];
+  print_io {|(foo"x"bar)|};
+  print_io {|(foo(x)bar)|};
+  print_io {|("x"foo"y")|};
+  print_io {|((x)foo(y))|};
+  [%expect
+    {|
+    (foo"x"bar)
+    ^^..^.^^..^
+    > (foo x bar)
+
+
+    (foo(x)bar)
+    ^^..^^^^..^
+    > (foo (x) bar)
+
+
+    ("x"foo"y")
+    ^^.^^..^.^^
+    > (x foo y)
+
+
+    ((x)foo(y))
+    ^^^^^..^^^^
+    > ((x) foo (y)) |}];
+  print_io {|"foo\n"|};
+  [%expect {|
+    "foo\n"
+    ^.....^
+    > "foo\n" |}];
   print_io {|(foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )|};
   [%expect
     {|
@@ -106,36 +135,38 @@ let%expect_test _ =
     > (foo "bar \"x\" baz" quux)
     > (foo "bar \"x\" baz" quux)
     > (foo "bar \"x\" baz" quux)
-    > (foo "bar \"x\" baz" quux) |}]
+    > (foo "bar \"x\" baz" quux) |}];
+  print_io
+    {| (foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )|};
+  [%expect
+    {|
+   (foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )
+  .^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^
+  > (foo "bar \"x\" baz" quux)
+  > (foo "bar \"x\" baz" quux)
+  > (foo "bar \"x\" baz" quux) |}];
+  print_io
+    {|xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy|};
+  [%expect
+    {|
+  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+  ^................................................................................................
+  > xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy |}];
+  print_io
+    {|xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy|};
+  [%expect
+    {|
+  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+  ^..............................................................^.^...............................
+  > xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  > yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy |}];
+  print_io {|(                                                              "ab")|};
+  [%expect
+    {|
+  (                                                              "ab")
+  ^..............................................................^..^^
+  > (ab) |}]
 ;;
 
-(* print_io
- *   {| (foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )|};
- * [%expect
- *   {|
- *    (foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )
- *   ^^^..^^.............^^^...^.....^^^..^^.............^^^...^.....^^^..^^.............^^^...^.....^
- *   > (foo "bar \"x\" baz" quux)
- *   > (foo "bar \"x\" baz" quux)
- *   > (foo "bar \"x\" baz" quux) |}];
- * print_io
- *   {|xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy|};
- * [%expect
- *   {|
- *   xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
- *   ^................................................................................................
- *   > xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy |}];
- * print_io
- *   {|xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy|};
- * [%expect
- *   {|
- *   xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
- *   ^..............................................................^.^...............................
- *   > xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
- *   > yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy |}];
- * print_io {|(                                                              "ab")|};
- * [%expect
- *   {|
- *   (                                                              "ab")
- *   ^^.............................................................^..^^
- *   > (ab) |}] *)
+(* TODO: comments *)
+(* TODO: octal *)

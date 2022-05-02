@@ -32,7 +32,13 @@ module State = struct
     for i = lo to hi - 1 do
       if !escape_next
       then (
-        Buffer.add_char buffer input.{i};
+        Buffer.add_char
+          buffer
+          (match input.{i} with
+          | 'n' -> '\n'
+          | 't' -> '\t'
+          | 'r' -> '\r'
+          | ch -> ch);
         escape_next := false)
       else (
         match input.{i} with
@@ -122,4 +128,10 @@ let run actual_string ~f =
   let indices = Bigarray.Array1.sub indices 0 n_indices in
   let state = State.create ~direct_emit:(fun sexp -> f sexp) in
   State.process_all state input indices
+;;
+
+let of_string_many string =
+  let rev_result = ref [] in
+  run string ~f:(fun sexp -> rev_result := sexp :: !rev_result);
+  List.rev !rev_result
 ;;

@@ -20,3 +20,4 @@ module State : sig
 end
 
 val run : string -> f:(Sexp.t -> unit) -> unit
+val of_string_many : string -> Sexp.t list
