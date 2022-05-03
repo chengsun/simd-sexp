@@ -19,14 +19,9 @@ module Extract_structural_indices = struct
   ;;
 end
 
-external _unescape : string -> int -> int -> bytes -> int = "ml_unescape" [@@noalloc]
+external _unescape : string -> int -> int -> string option = "ml_unescape"
 
-let unescape ~input ~pos ~len ~output =
-  assert (Bytes.length output >= len);
-  match _unescape input pos len output with
-  | -1 -> None
-  | output_len -> Some output_len
-;;
+let unescape ~input ~pos ~len = _unescape input pos len
 
 module Stack = struct
   type t =
@@ -50,19 +45,10 @@ module State = struct
     }
   ;;
 
-  let process_escape_sequences t input lo hi =
-    let atom_buffer =
-      if Bytes.length t.atom_buffer < hi - lo
-      then (
-        let rec new_length len = if len >= hi - lo then len else new_length (len * 2) in
-        let new_buffer = Bytes.create (new_length (2 * Bytes.length t.atom_buffer)) in
-        t.atom_buffer <- new_buffer;
-        new_buffer)
-      else t.atom_buffer
-    in
-    match unescape ~input ~pos:lo ~len:(hi - lo) ~output:atom_buffer with
+  let process_escape_sequences (_ : t) input lo hi =
+    match unescape ~input ~pos:lo ~len:(hi - lo) with
     | None -> raise_s [%sexp "Invalid escape sequence"]
-    | Some len -> Bytes.To_string.sub ~pos:0 ~len atom_buffer
+    | Some s -> s
   ;;
 
   let emit_atom (_ : t) stack input previous_index next_index =

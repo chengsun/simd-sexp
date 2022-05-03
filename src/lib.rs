@@ -51,16 +51,29 @@ pub fn ml_extract_structural_indices(
     (input_index, output_index)
 }
 
+struct ByteString(Vec<u8>);
+
+unsafe impl ocaml::IntoValue for ByteString {
+    fn into_value(self, _rt: &ocaml::Runtime) -> ocaml::Value {
+        unsafe { ocaml::Value::bytes(&self.0[..]) }
+    }
+}
+
+
 #[ocaml::func]
-pub fn ml_unescape(input: &[u8], pos: ocaml::Uint, len: ocaml::Uint, output: &mut [u8]) -> ocaml::Int {
+pub fn ml_unescape(input: &[u8], pos: ocaml::Uint, len: ocaml::Uint) -> Option<ByteString> {
     use escape::Unescape;
 
     let input = &input[pos..pos+len];
+    let mut output: Vec<u8> = (0..input.len()).map(|_| 0u8).collect();
 
     // TODO: nongeneric version
     let unescape = escape::GenericUnescape::new();
-    match unescape.unescape(input, output) {
-        None => -1,
-        Some(output_len) => output_len.try_into().unwrap()
+    match unescape.unescape(input, &mut output[..]) {
+        None => None,
+        Some(output_len) => {
+            output.truncate(output_len);
+            Some(ByteString(output))
+        }
     }
 }

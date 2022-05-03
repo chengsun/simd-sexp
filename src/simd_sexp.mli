@@ -15,8 +15,6 @@ module Extract_structural_indices : sig
     -> int * int
 end
 
-val unescape : input:string -> pos:int -> len:int -> output:bytes -> int option
-
 module State : sig
   type t
 
