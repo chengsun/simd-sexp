@@ -83,7 +83,7 @@ module State = struct
     gather [] stack
   ;;
 
-  let process_one t stack ~input ~indices_index ~indices_len:(_ : int) =
+  let process_one t stack ~input ~indices_index ~indices_len =
     let[@inline always] index i =
       Bigarray.Array1.unsafe_get t.indices_buffer i |> Int32.to_int_trunc
     in
@@ -93,10 +93,19 @@ module State = struct
     | ')' -> emit_closing stack, indices_index + 1
     | ' ' | '\t' | '\n' -> stack, indices_index + 1
     | '"' ->
-      ( emit_atom_quoted t stack input (this_index + 1) (index (indices_index + 1))
-      , indices_index + 2 )
+      let end_index =
+        if indices_index + 1 >= indices_len
+        then raise_s [%sexp "Unclosed quote"]
+        else index (indices_index + 1)
+      in
+      emit_atom_quoted t stack input (this_index + 1) end_index, indices_index + 2
     | _ ->
-      emit_atom t stack input this_index (index (indices_index + 1)), indices_index + 1
+      let end_index =
+        if indices_index + 1 >= indices_len
+        then String.length input
+        else index (indices_index + 1)
+      in
+      emit_atom t stack input this_index end_index, indices_index + 1
   ;;
 
   let process_eof (_ : t) stack = emit_eof stack
@@ -114,7 +123,7 @@ module State = struct
               i
               (Bigarray.Array1.unsafe_get t.indices_buffer (indices_index + i))
           done;
-          let input_index', indices_len =
+          let input_index, indices_len =
             Extract_structural_indices.run
               t.extract_structural_indices
               ~input
@@ -122,7 +131,7 @@ module State = struct
               ~indices:t.indices_buffer
               ~indices_index:n_unconsumed_indices
           in
-          input_index', 0, indices_len)
+          input_index, 0, indices_len)
       in
       if indices_index >= indices_len
       then (
@@ -140,10 +149,7 @@ end
 
 external rust_parse_sexp : string -> (Sexp.t array, string) result = "ml_parse_sexp"
 
-let of_string_many actual_string =
-  let actual_length = String.length actual_string in
-  let input = actual_string ^ String.make ((64 - (actual_length mod 64)) mod 64) ' ' in
-  assert (String.length input mod 64 = 0);
+let of_string_many input =
   (* let state = State.create () in *)
   (* State.process_all state ~input *)
   match rust_parse_sexp input with
