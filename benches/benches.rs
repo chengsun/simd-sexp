@@ -2,6 +2,38 @@ use std::collections::HashSet;
 use criterion::*;
 use simd_sexp::*;
 
+fn bench_parser(c: &mut Criterion) {
+    {
+        let input_pp = std::fs::read_to_string("/home/csun/simd-sexp/test_data.pp.sexp").unwrap();
+        let input_pp = input_pp.as_bytes();
+
+        let mut group = c.benchmark_group("parser-pp");
+        group.throughput(Throughput::Bytes(input_pp.len() as u64));
+        group.bench_function("rust",
+                             |b| b.iter(|| {
+                                 let mut parser = parser::State::new(RustSexpFactory::new());
+                                 let result = parser.process_all(input_pp);
+                                 black_box(result)
+                             }));
+        group.finish();
+    }
+
+    {
+        let input_mach = std::fs::read_to_string("/home/csun/simd-sexp/test_data.mach.sexp").unwrap();
+        let input_mach = input_mach.as_bytes();
+
+        let mut group = c.benchmark_group("parser-mach");
+        group.throughput(Throughput::Bytes(input_mach.len() as u64));
+        group.bench_function("rust",
+                             |b| b.iter(|| {
+                                 let mut parser = parser::State::new(RustSexpFactory::new());
+                                 let result = parser.process_all(input_mach);
+                                 black_box(result)
+                             }));
+        group.finish();
+    }
+}
+
 fn bench_unescape(c: &mut Criterion) {
     use escape::Unescape;
 
@@ -238,6 +270,7 @@ fn bench_xor_masked_adjacent(c: &mut Criterion) {
 }
 
 criterion_group!(benches,
+                 bench_parser,
                  bench_unescape,
                  bench_extract,
                  bench_find_quote_transitions,

@@ -105,7 +105,7 @@ impl<'a> parser::SexpFactory for OCamlSexpFactory<'a> {
         }
     }
 
-    fn list(&self, xs: &[Self::Sexp]) -> Self::Sexp {
+    fn list(&self, xs: Vec<Self::Sexp>) -> Self::Sexp {
         unsafe {
             let mut inner = ocaml::Value::unit();
             for x in xs.iter().rev() {
@@ -120,6 +120,39 @@ impl<'a> parser::SexpFactory for OCamlSexpFactory<'a> {
             *ocaml::sys::field(list_value.raw().0, 0) = inner_value.raw().0;
             list_value
         }
+    }
+}
+
+pub enum RustSexp {
+    Atom(Vec<u8>),
+    List(Vec<RustSexp>),
+}
+
+impl ocaml::Custom for RustSexp {
+    const NAME: &'static str = "RustSexp";
+    const OPS: ocaml::custom::CustomOps = ocaml::custom::DEFAULT_CUSTOM_OPS;
+    const FIXED_LENGTH: Option<ocaml::sys::custom_fixed_length> = None;
+    const USED: usize = 32usize;
+    const MAX: usize = 10485760usize;
+}
+
+pub struct RustSexpFactory();
+
+impl RustSexpFactory {
+    pub fn new() -> Self {
+        RustSexpFactory()
+    }
+}
+
+impl parser::SexpFactory for RustSexpFactory {
+    type Sexp = RustSexp;
+
+    fn atom(&self, a: &[u8]) -> Self::Sexp {
+        RustSexp::Atom(a.to_vec())
+    }
+
+    fn list(&self, xs: Vec<Self::Sexp>) -> Self::Sexp {
+        RustSexp::List(xs)
     }
 }
 
@@ -140,6 +173,14 @@ unsafe impl<T: ocaml::IntoValue> ocaml::IntoValue for OCamlResult<T> {
 pub fn ml_parse_sexp(input: &[u8]) -> OCamlResult<Vec<ocaml::Value>> {
 
     let mut parser = parser::State::new(OCamlSexpFactory::new(rt));
+    let result = parser.process_all(input);
+    OCamlResult(result.map_err(|err| err.to_string()))
+}
+
+#[ocaml::func]
+pub fn ml_parse_sexp_to_rust(input: &[u8]) -> OCamlResult<Vec<RustSexp>> {
+
+    let mut parser = parser::State::new(RustSexpFactory::new());
     let result = parser.process_all(input);
     OCamlResult(result.map_err(|err| err.to_string()))
 }

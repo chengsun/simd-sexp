@@ -3,7 +3,7 @@ use crate::{escape, extract, sexp_structure};
 pub trait SexpFactory {
     type Sexp;
     fn atom(&self, a: &[u8]) -> Self::Sexp;
-    fn list(&self, xs: &[Self::Sexp]) -> Self::Sexp;
+    fn list(&self, xs: Vec<Self::Sexp>) -> Self::Sexp;
 }
 
 const INDICES_BUFFER_MAX_LEN: usize = 512;
@@ -29,6 +29,7 @@ impl std::fmt::Display for Error {
         match self {
             Error::UnmatchedOpenParen => { write!(f, "Unmatched open paren") }
             Error::UnmatchedCloseParen => { write!(f, "Unmatched close paren") }
+            Error::UnclosedQuote => { write!(f, "Unclosed quote") }
             Error::InvalidEscape => { write!(f, "Invalid escape") }
         }
     }
@@ -69,8 +70,8 @@ impl<SexpFactoryT: SexpFactory> State<SexpFactoryT> {
             },
             b')' => {
                 let open_index = self.depth_stack.pop().ok_or(Error::UnmatchedCloseParen)?;
-                let sexp = self.sexp_factory.list(&self.sexp_stack[open_index..]);
-                self.sexp_stack.truncate(open_index);
+                let inner = self.sexp_stack.split_off(open_index);
+                let sexp = self.sexp_factory.list(inner);
                 self.sexp_stack.push(sexp);
                 Ok(1)
             },
@@ -78,9 +79,16 @@ impl<SexpFactoryT: SexpFactory> State<SexpFactoryT> {
             b'"' => {
                 use escape::Unescape;
                 let mut atom_string: Vec<u8> = (0..input.len()).map(|_| 0).collect();
+                let start_index = indices_buffer[0] + 1;
+                let end_index =
+                    if indices_buffer.len() < 2 {
+                        return Error::UnclosedQuote
+                    } else {
+                        indices_buffer[1]
+                    };
                 let atom_string_len =
                     self.unescape.unescape(
-                        &input[(indices_buffer[0] + 1)..indices_buffer[1]],
+                        &input[start_index..end_index],
                         &mut atom_string[..])
                     .ok_or(Error::InvalidEscape)?;
                 atom_string.truncate(atom_string_len);
@@ -88,7 +96,14 @@ impl<SexpFactoryT: SexpFactory> State<SexpFactoryT> {
                 Ok(2)
             },
             _ => {
-                self.sexp_stack.push(self.sexp_factory.atom(&input[indices_buffer[0]..indices_buffer[1]]));
+                let start_index = indices_buffer[0];
+                let end_index =
+                    if indices_buffer.len() < 2 {
+                        input.len()
+                    } else {
+                        indices_buffer[1]
+                    };
+                self.sexp_stack.push(self.sexp_factory.atom(&input[start_index..end_index]));
                 Ok(1)
             }
         }

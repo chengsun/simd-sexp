@@ -149,10 +149,26 @@ end
 
 external rust_parse_sexp : string -> (Sexp.t array, string) result = "ml_parse_sexp"
 
+type rust_sexp
+
+external rust_parse_rust_sexp
+  :  string
+  -> (rust_sexp array, string) result
+  = "ml_parse_sexp_to_rust"
+
 let of_string_many input =
-  (* let state = State.create () in *)
-  (* State.process_all state ~input *)
+  let state = State.create () in
+  State.process_all state ~input
+;;
+
+let of_string_many_rust input =
   match rust_parse_sexp input with
   | Ok sexps -> Array.to_list sexps
-  | Error string -> failwith string
+  | Error string -> raise_s [%sexp (string : string), [%here]]
+;;
+
+let of_string_many_rust_sexp input =
+  match rust_parse_rust_sexp input with
+  | Ok sexps -> Array.to_list sexps
+  | Error string -> raise_s [%sexp (string : string), [%here]]
 ;;

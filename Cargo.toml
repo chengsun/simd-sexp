@@ -14,9 +14,6 @@ ocaml = "0.22"
 criterion = "0.3"
 rand = "0.8"
 
-[profile.release]
-lto = 'fat'
-
 [[bench]]
 name = "benches"
 harness = false
