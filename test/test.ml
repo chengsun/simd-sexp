@@ -23,10 +23,9 @@ let%expect_test _ =
     done;
     printf "\n";
     (* Stage 2: check the state machine *)
-    let state =
-      Simd_sexp.State.create ~direct_emit:(fun sexp -> printf !"> %{Sexp#hum}\n" sexp)
-    in
-    Simd_sexp.State.process_all state ~input ~indices ~indices_len;
+    let state = Simd_sexp.State.create () in
+    Simd_sexp.State.process_all state ~input ~indices ~indices_len
+    |> List.iter ~f:(fun sexp -> printf !"> %{Sexp#hum}\n" sexp);
     printf "\n\n"
   in
   print_io {|foo|};

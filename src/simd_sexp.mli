@@ -12,9 +12,14 @@ val unescape : input:string -> pos:int -> len:int -> output:bytes -> int option
 module State : sig
   type t
 
-  val create : direct_emit:(Sexp.t -> unit) -> t
-  val process_all : t -> input:string -> indices:int array -> indices_len:int -> unit
+  val create : unit -> t
+
+  val process_all
+    :  t
+    -> input:string
+    -> indices:int array
+    -> indices_len:int
+    -> Sexp.t list
 end
 
-val run : string -> f:(Sexp.t -> unit) -> unit
 val of_string_many : string -> Sexp.t list

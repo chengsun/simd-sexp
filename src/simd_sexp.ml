@@ -32,13 +32,9 @@ module Stack = struct
 end
 
 module State = struct
-  type t =
-    { mutable stack : Stack.t
-    ; direct_emit : Sexp.t -> unit
-    ; mutable atom_buffer : bytes
-    }
+  type t = { mutable atom_buffer : bytes }
 
-  let create ~direct_emit = { stack = Nil; direct_emit; atom_buffer = Bytes.create 128 }
+  let create () = { atom_buffer = Bytes.create 128 }
 
   let process_escape_sequences t input lo hi =
     let atom_buffer =
@@ -55,73 +51,66 @@ module State = struct
     | Some len -> Bytes.To_string.sub ~pos:0 ~len atom_buffer
   ;;
 
-  let emit_atom t input previous_index next_index =
+  let emit_atom (_ : t) stack input previous_index next_index =
     let the_atom =
       Sexp.Atom (String.sub input ~pos:previous_index ~len:(next_index - previous_index))
     in
-    match t.stack with
-    | Nil -> t.direct_emit the_atom
-    | stack -> t.stack <- Sexp (the_atom, stack)
+    Stack.Sexp (the_atom, stack)
   ;;
 
-  let emit_atom_quoted t input previous_index next_index =
+  let emit_atom_quoted t stack input previous_index next_index =
     let the_atom =
       Sexp.Atom (process_escape_sequences t input previous_index next_index)
     in
-    match t.stack with
-    | Nil -> t.direct_emit the_atom
-    | stack -> t.stack <- Sexp (the_atom, stack)
+    Stack.Sexp (the_atom, stack)
   ;;
 
-  let process_one t ~input ~indices ~indices_len ~i =
+  let emit_closing stack =
+    let rec gather accum = function
+      | Stack.Nil -> raise_s [%sexp "Too many closing parens"]
+      | Stack.Sexp (sexp, stack) -> gather (sexp :: accum) stack
+      | Stack.Open stack -> Stack.Sexp (Sexp.List accum, stack)
+    in
+    gather [] stack
+  ;;
+
+  let emit_eof stack =
+    let rec gather accum = function
+      | Stack.Nil -> accum
+      | Stack.Sexp (sexp, stack) -> gather (sexp :: accum) stack
+      | Stack.Open _ -> raise_s [%sexp "Unmatched open paren"]
+    in
+    gather [] stack
+  ;;
+
+  let process_one t stack ~input ~indices ~indices_len ~i =
     let[@inline always] index i =
       assert (0 <= i && i < indices_len);
       Array.unsafe_get indices i
     in
     match String.unsafe_get input (index i) with
-    | '(' ->
-      t.stack <- Open t.stack;
-      i + 1
-    | ')' ->
-      let rec gather accum = function
-        | Stack.Nil -> raise_s [%sexp "Too many closing parens"]
-        | Stack.Sexp (sexp, stack) -> gather (sexp :: accum) stack
-        | Stack.Open stack ->
-          t.stack <- stack;
-          accum
-      in
-      let the_sexp = Sexp.List (gather [] t.stack) in
-      (match t.stack with
-      | Nil -> t.direct_emit the_sexp
-      | _ -> t.stack <- Sexp (the_sexp, t.stack));
-      i + 1
-    | ' ' | '\t' | '\n' -> i + 1
+    | '(' -> Stack.Open stack, i + 1
+    | ')' -> emit_closing stack, i + 1
+    | ' ' | '\t' | '\n' -> stack, i + 1
     | '"' ->
       assert (Char.equal (String.unsafe_get input (index (i + 1))) '"');
-      emit_atom_quoted t input (index i + 1) (index (i + 1));
-      i + 2
-    | _ ->
-      emit_atom t input (index i) (index (i + 1));
-      i + 1
+      emit_atom_quoted t stack input (index i + 1) (index (i + 1)), i + 2
+    | _ -> emit_atom t stack input (index i) (index (i + 1)), i + 1
   ;;
 
-  let process_eof t =
-    match t.stack with
-    | Nil -> ()
-    | _ -> raise_s [%sexp "Not enough closing parens before EOF", (t.stack : Stack.t)]
-  ;;
+  let process_eof (_ : t) stack = emit_eof stack
 
   let process_all t ~input ~indices ~indices_len =
-    let rec loop i =
+    let rec loop (stack, i) =
       if i >= indices_len
-      then process_eof t
-      else loop (process_one t ~input ~indices ~indices_len ~i)
+      then process_eof t stack
+      else loop (process_one t stack ~input ~indices ~indices_len ~i)
     in
-    loop 0
+    loop (Nil, 0)
   ;;
 end
 
-let run actual_string ~f =
+let of_string_many actual_string =
   let actual_length = String.length actual_string in
   let input = actual_string ^ String.make ((64 - (actual_length mod 64)) mod 64) ' ' in
   assert (String.length input mod 64 = 0);
@@ -129,12 +118,6 @@ let run actual_string ~f =
   let indices_len =
     extract_structural_indices ~input ~output:indices ~output_index:0 ~start_offset:0
   in
-  let state = State.create ~direct_emit:(fun sexp -> f sexp) in
+  let state = State.create () in
   State.process_all state ~input ~indices ~indices_len
-;;
-
-let of_string_many string =
-  let rev_result = ref [] in
-  run string ~f:(fun sexp -> rev_result := sexp :: !rev_result);
-  List.rev !rev_result
 ;;
