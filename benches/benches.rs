@@ -2,29 +2,6 @@ use std::collections::HashSet;
 use criterion::*;
 use simd_sexp::*;
 
-fn bench_lib(c: &mut Criterion) {
-    let input_all_parens_64 = [b'('; 64];
-    let input_all_misc_64 = [b'x'; 64];
-    let input_all_parens_6400 = [b'('; 6400];
-    let input_all_misc_6400 = [b'x'; 6400];
-
-    let mut group = c.benchmark_group("lib-64");
-    group.throughput(Throughput::Bytes(64));
-    group.bench_function("all-parens",
-                         |b| b.iter(|| extract_structural_indices(&input_all_parens_64[..], |bit| { black_box(bit); })));
-    group.bench_function("all-misc",
-                         |b| b.iter(|| extract_structural_indices(&input_all_misc_64[..], |bit| { black_box(bit); })));
-    group.finish();
-
-    let mut group = c.benchmark_group("lib-6400");
-    group.throughput(Throughput::Bytes(6400));
-    group.bench_function("all-parens",
-                         |b| b.iter(|| extract_structural_indices(&input_all_parens_6400[..], |bit| { black_box(bit); })));
-    group.bench_function("all-misc",
-                         |b| b.iter(|| extract_structural_indices(&input_all_misc_6400[..], |bit| { black_box(bit); })));
-    group.finish();
-}
-
 fn bench_unescape(c: &mut Criterion) {
     use escape::Unescape;
 
@@ -261,7 +238,6 @@ fn bench_xor_masked_adjacent(c: &mut Criterion) {
 }
 
 criterion_group!(benches,
-                 bench_lib,
                  bench_unescape,
                  bench_extract,
                  bench_find_quote_transitions,

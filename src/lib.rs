@@ -20,11 +20,7 @@ ocaml::custom! (ExtractStructuralIndicesState);
 
 #[ocaml::func]
 pub fn ml_extract_structural_indices_create_state(_unit: ocaml::Value) -> ExtractStructuralIndicesState {
-    // TODO
-    let clmul = clmul::Sse2Pclmulqdq::new().unwrap();
-    let vector_classifier_builder = vector_classifier::Avx2Builder::new().unwrap();
-    let xor_masked_adjacent = xor_masked_adjacent::Bmi2::new().unwrap();
-    ExtractStructuralIndicesState(Box::new(sexp_structure::Avx2::new(clmul, vector_classifier_builder, xor_masked_adjacent)))
+    ExtractStructuralIndicesState(Box::new(sexp_structure::Avx2::new().unwrap()))
 }
 
 #[ocaml::func]
@@ -38,13 +34,11 @@ pub fn ml_extract_structural_indices(
 {
     use sexp_structure::Classifier;
 
-    let input_len = input.len();
     let output_len = output.len();
     let output_data = output.data_mut();
+    assert!(output_index + 64 <= output_len);
 
-    while input_index + 64 <= input_len && output_index + 64 <= output_len {
-        let bitmask = extract_structural_indices_state.as_mut().0.structural_indices_bitmask(&input[input_index..]);
-
+    extract_structural_indices_state.as_mut().0.structural_indices_bitmask(&input[input_index..], |bitmask, bitmask_len| {
         extract::safe_generic(|bit_offset| {
             unsafe {
                 *output_data.get_unchecked_mut(output_index) = (input_index + bit_offset) as i32;
@@ -52,8 +46,13 @@ pub fn ml_extract_structural_indices(
             output_index += 1;
         }, bitmask);
 
-        input_index += 64;
-    }
+        input_index += bitmask_len;
+        if output_index + std::cmp::min(64, input.len() - input_index) <= output_len {
+            sexp_structure::CallbackResult::Continue
+        } else {
+            sexp_structure::CallbackResult::Finish
+        }
+    });
 
     (input_index, output_index)
 }

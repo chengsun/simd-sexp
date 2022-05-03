@@ -42,8 +42,7 @@ pub unsafe fn print_char256(i: __m256i) {
     println!("]");
 }
 
-fn print_bitmask(m: u64, n_bits: usize, little_endian: bool) {
-    print!("[");
+fn print_bitmask_internal(m: u64, n_bits: usize, little_endian: bool) {
     let mut iter_le = 0..n_bits;
     let mut iter_be = iter_le.clone().rev();
     let iter: &mut dyn Iterator<Item = usize> = if little_endian { &mut iter_le } else { &mut iter_be };
@@ -54,16 +53,44 @@ fn print_bitmask(m: u64, n_bits: usize, little_endian: bool) {
             print!(" ");
         }
     }
-    println!("]");
 }
 
 pub fn print_bitmask_be(m: u64, n_bits: usize) {
-    print_bitmask(m, n_bits, false)
+    print!("[");
+    print_bitmask_internal(m, n_bits, false);
+    println!("]");
 }
 
 pub fn print_bitmask_le(m: u64, n_bits: usize) {
-    print_bitmask(m, n_bits, true)
+    print!("[");
+    print_bitmask_internal(m, n_bits, true);
+    println!("]");
 }
+
+pub fn print_bitmask_le_multi(m: &[u64], mut n_bits: usize) {
+    print!("[");
+    let mut i = 0;
+    while n_bits > 0 {
+        let this_bits = std::cmp::max(n_bits, 64);
+        print_bitmask_internal(m[i], this_bits, true);
+        n_bits = n_bits - this_bits;
+        i = i + 1;
+    }
+    println!("]");
+}
+
+pub fn print_bool_bitmask(m: &[bool]) {
+    print!("[");
+    for b in m {
+        if *b {
+            print!("x");
+        } else {
+            print!(" ");
+        }
+    }
+    println!("]");
+}
+
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx")]

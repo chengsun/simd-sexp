@@ -115,7 +115,7 @@ mod start_stop_transitions_tests {
         generic.run_test(start, stop, prev_state, output);
 
         match Bmi2::new() {
-            Some(sse2_pclmulqdq) => sse2_pclmulqdq.run_test(start, stop, prev_state, output),
+            Some(bmi2) => bmi2.run_test(start, stop, prev_state, output),
             None => (),
         }
     }

@@ -1,4 +1,4 @@
-use crate::{clmul, escape, extract, sexp_structure, vector_classifier, xor_masked_adjacent};
+use crate::{escape, extract, sexp_structure};
 
 pub trait SexpFactory {
     type Sexp;
@@ -36,11 +36,7 @@ impl std::fmt::Display for Error {
 
 impl<SexpFactoryT: SexpFactory> State<SexpFactoryT> {
     pub fn new(sexp_factory: SexpFactoryT) -> Self {
-        // TODO
-        let clmul = clmul::Sse2Pclmulqdq::new().unwrap();
-        let vector_classifier_builder = vector_classifier::Avx2Builder::new().unwrap();
-        let xor_masked_adjacent = xor_masked_adjacent::Bmi2::new().unwrap();
-        let sexp_structure_classifier = sexp_structure::Avx2::new(clmul, vector_classifier_builder, xor_masked_adjacent);
+        let sexp_structure_classifier = sexp_structure::Avx2::new().unwrap();
 
         let unescape = escape::GenericUnescape::new();
 
@@ -115,16 +111,21 @@ impl<SexpFactoryT: SexpFactory> State<SexpFactoryT> {
                 indices_index = 0;
                 indices_len = n_unconsumed_indices;
 
-                while input_index + 64 <= input.len() && indices_len + 64 <= INDICES_BUFFER_MAX_LEN {
-                    let bitmask = self.sexp_structure_classifier.structural_indices_bitmask(&input[input_index..]);
+                self.sexp_structure_classifier.structural_indices_bitmask(
+                    &input[input_index..],
+                    |bitmask, bitmask_len| {
+                        extract::safe_generic(|bit_offset| {
+                            self.indices_buffer[indices_len] = input_index + bit_offset;
+                            indices_len += 1;
+                        }, bitmask);
 
-                    extract::safe_generic(|bit_offset| {
-                        self.indices_buffer[indices_len] = input_index + bit_offset;
-                        indices_len += 1;
-                    }, bitmask);
-
-                    input_index += 64;
-                }
+                        input_index += bitmask_len;
+                        if indices_len + 64 <= INDICES_BUFFER_MAX_LEN {
+                            sexp_structure::CallbackResult::Continue
+                        } else {
+                            sexp_structure::CallbackResult::Finish
+                        }
+                    });
             }
 
             if indices_index >= indices_len {

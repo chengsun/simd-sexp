@@ -1,8 +1,3 @@
-#[cfg(target_arch = "x86")]
-use core::arch::x86::*;
-#[cfg(target_arch = "x86_64")]
-use core::arch::x86_64::*;
-
 pub trait Unescape {
     fn unescape(&self, input: &[u8], output: &mut [u8]) -> Option<usize>;
 }
