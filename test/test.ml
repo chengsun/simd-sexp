@@ -18,7 +18,7 @@ let%expect_test _ =
       Hash_set.add n_set indices.(i)
     done;
     printf "%s\n" test_string;
-    for i = 0 to actual_length - 1 do
+    for i = 0 to actual_length do
       if Hash_set.mem n_set i then printf "^" else printf "."
     done;
     printf "\n";
@@ -34,18 +34,18 @@ let%expect_test _ =
   [%expect
     {|
     foo
-    ^..
+    ^..^
     > foo
 
 
     foo bar
-    ^..^^..
+    ^..^^..^
     > foo
     > bar
 
 
     foo   bar
-    ^..^..^..
+    ^..^..^..^
     > foo
     > bar |}];
   print_io {|(foo   bar)|};
@@ -57,32 +57,32 @@ let%expect_test _ =
   [%expect
     {|
     (foo   bar)
-    ^^..^..^..^
+    ^^..^..^..^.
     > (foo bar)
 
 
     (fo\o   bar)
-    ^^...^..^..^
+    ^^...^..^..^.
     > ("fo\\o" bar)
 
 
     "()"
-    ^..^
+    ^..^.
     > "()"
 
 
     " "
-    ^.^
+    ^.^.
     > " "
 
 
     "fo\"o"
-    ^.....^
+    ^.....^.
     > "fo\"o"
 
 
     fo\"o"
-    ^..^.^
+    ^..^.^.
     > "fo\\"
     > o |}];
   print_io {|(foo"x"bar)|};
@@ -92,33 +92,33 @@ let%expect_test _ =
   [%expect
     {|
     (foo"x"bar)
-    ^^..^.^^..^
+    ^^..^.^^..^.
     > (foo x bar)
 
 
     (foo(x)bar)
-    ^^..^^^^..^
+    ^^..^^^^..^.
     > (foo (x) bar)
 
 
     ("x"foo"y")
-    ^^.^^..^.^^
+    ^^.^^..^.^^.
     > (x foo y)
 
 
     ((x)foo(y))
-    ^^^^^..^^^^
+    ^^^^^..^^^^.
     > ((x) foo (y)) |}];
   print_io {|"foo\n"|};
   [%expect {|
     "foo\n"
-    ^.....^
+    ^.....^.
     > "foo\n" |}];
   print_io {|(foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )|};
   [%expect
     {|
     (foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )
-    ^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^
+    ^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^.
     > (foo "bar \"x\" baz" quux)
     > (foo "bar \"x\" baz" quux) |}];
   print_io
@@ -126,7 +126,7 @@ let%expect_test _ =
   [%expect
     {|
     (foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )
-    ^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^
+    ^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^.
     > (foo "bar \"x\" baz" quux)
     > (foo "bar \"x\" baz" quux)
     > (foo "bar \"x\" baz" quux)
@@ -136,7 +136,7 @@ let%expect_test _ =
   [%expect
     {|
    (foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )
-  .^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^
+  .^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^.
   > (foo "bar \"x\" baz" quux)
   > (foo "bar \"x\" baz" quux)
   > (foo "bar \"x\" baz" quux) |}];
@@ -145,21 +145,21 @@ let%expect_test _ =
   [%expect
     {|
   xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
-  ^................................................................................................
+  ^................................................................................................^
   > xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy |}];
   print_io
     {|xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy|};
   [%expect
     {|
   xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
-  ^..............................................................^.^...............................
+  ^..............................................................^.^...............................^
   > xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
   > yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy |}];
   print_io {|(                                                              "ab")|};
   [%expect
     {|
   (                                                              "ab")
-  ^..............................................................^..^^
+  ^..............................................................^..^^.
   > (ab) |}]
 ;;
 
