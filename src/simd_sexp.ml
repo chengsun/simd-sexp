@@ -40,7 +40,7 @@ module State = struct
 
   let create () =
     { atom_buffer = Bytes.create 128
-    ; indices_buffer = Bigarray.Array1.create Bigarray.int32 Bigarray.c_layout 128
+    ; indices_buffer = Bigarray.Array1.create Bigarray.int32 Bigarray.c_layout 512
     ; extract_structural_indices = Extract_structural_indices.create ()
     }
   ;;
