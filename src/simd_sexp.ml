@@ -83,26 +83,27 @@ module State = struct
     gather [] stack
   ;;
 
-  let process_one t stack ~input ~indices_index ~indices_len =
-    let[@inline always] index i =
-      assert (0 <= i && i < indices_len);
-      Array.unsafe_get t.indices_buffer i
-    in
-    match String.unsafe_get input (index indices_index) with
+  let process_one t stack ~input ~indices_index ~indices_len:(_ : int) =
+    let this_index = Array.unsafe_get t.indices_buffer indices_index in
+    match String.unsafe_get input this_index with
     | '(' -> Stack.Open stack, indices_index + 1
     | ')' -> emit_closing stack, indices_index + 1
     | ' ' | '\t' | '\n' -> stack, indices_index + 1
     | '"' ->
-      assert (Char.equal (String.unsafe_get input (index (indices_index + 1))) '"');
       ( emit_atom_quoted
           t
           stack
           input
-          (index indices_index + 1)
-          (index (indices_index + 1))
+          (this_index + 1)
+          (Array.unsafe_get t.indices_buffer (indices_index + 1))
       , indices_index + 2 )
     | _ ->
-      ( emit_atom t stack input (index indices_index) (index (indices_index + 1))
+      ( emit_atom
+          t
+          stack
+          input
+          this_index
+          (Array.unsafe_get t.indices_buffer (indices_index + 1))
       , indices_index + 1 )
   ;;
 
