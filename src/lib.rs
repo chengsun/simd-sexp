@@ -2,12 +2,15 @@ pub mod clmul;
 pub mod extract;
 pub mod escape;
 pub mod find_quote_transitions;
+pub mod parser;
 pub mod ranges;
 pub mod sexp_structure;
 pub mod start_stop_transitions;
 pub mod utils;
 pub mod vector_classifier;
 pub mod xor_masked_adjacent;
+
+use ocaml::IntoValue;
 
 // Needs to be in a Box<> for alignment guarantees (which the OCaml GC cannot
 // provide when it's relocating stuff)
@@ -24,7 +27,7 @@ pub fn ml_extract_structural_indices_create_state(_unit: ocaml::Value) -> Extrac
     ExtractStructuralIndicesState(Box::new(sexp_structure::Avx2::new(clmul, vector_classifier_builder, xor_masked_adjacent)))
 }
 
-#[ocaml::func(runtime)]
+#[ocaml::func]
 pub fn ml_extract_structural_indices(
     mut extract_structural_indices_state: ocaml::Pointer<ExtractStructuralIndicesState>,
     input: &[u8],
@@ -80,4 +83,59 @@ pub fn ml_unescape(input: &[u8], pos: ocaml::Uint, len: ocaml::Uint) -> Option<B
             Some(ByteString(output))
         }
     }
+}
+
+struct OCamlSexpFactory<'a> (&'a ocaml::Runtime);
+
+impl<'a> OCamlSexpFactory<'a> {
+    fn new(rt: &'a ocaml::Runtime) -> Self {
+        OCamlSexpFactory(rt)
+    }
+}
+
+impl<'a> parser::SexpFactory for OCamlSexpFactory<'a> {
+    type Sexp = ocaml::Value;
+
+    fn atom(&self, a: &[u8]) -> Self::Sexp {
+        unsafe {
+            let inner_value = ocaml::Value::bytes(a);
+            let mut atom_value = ocaml::Value::alloc_small(1, ocaml::Tag(0));
+            atom_value.store_field(&self.0, 0, inner_value);
+            atom_value
+        }
+    }
+
+    fn list(&self, xs: &[Self::Sexp]) -> Self::Sexp {
+        unsafe {
+            let mut inner = ocaml::List::empty();
+            for x in xs.iter().rev() {
+                inner = inner.add(&self.0, x.clone());
+            }
+            let inner_value = inner.into_value(&self.0);
+            let mut list_value = ocaml::Value::alloc_small(1, ocaml::Tag(1));
+            list_value.store_field(&self.0, 0, inner_value);
+            list_value
+        }
+    }
+}
+
+struct OCamlResult<T>(Result<T, String>);
+
+unsafe impl<T: ocaml::IntoValue> ocaml::IntoValue for OCamlResult<T> {
+    fn into_value(self, rt: &ocaml::Runtime) -> ocaml::Value {
+        unsafe {
+            match self.0 {
+                Ok(ok) => ocaml::Value::result_ok(rt, ok.into_value(rt)),
+                Err(err) => ocaml::Value::result_error(rt, err.into_value(rt)),
+            }
+        }
+    }
+}
+
+#[ocaml::func(rt)]
+pub fn ml_parse_sexp(input: &[u8]) -> OCamlResult<Vec<ocaml::Value>> {
+
+    let mut parser = parser::State::new(OCamlSexpFactory::new(rt));
+    let result = parser.process_all(input);
+    OCamlResult(result.map_err(|err| err.to_string()))
 }

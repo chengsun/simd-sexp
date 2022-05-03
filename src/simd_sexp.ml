@@ -138,10 +138,15 @@ module State = struct
   ;;
 end
 
+external rust_parse_sexp : string -> (Sexp.t array, string) result = "ml_parse_sexp"
+
 let of_string_many actual_string =
   let actual_length = String.length actual_string in
   let input = actual_string ^ String.make ((64 - (actual_length mod 64)) mod 64) ' ' in
   assert (String.length input mod 64 = 0);
-  let state = State.create () in
-  State.process_all state ~input
+  (* let state = State.create () in *)
+  (* State.process_all state ~input *)
+  match rust_parse_sexp input with
+  | Ok sexps -> Array.to_list sexps
+  | Error string -> failwith string
 ;;

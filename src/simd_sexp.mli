@@ -23,3 +23,4 @@ module State : sig
 end
 
 val of_string_many : string -> Sexp.t list
+external rust_parse_sexp : string -> (Sexp.t array, string) result = "ml_parse_sexp"
