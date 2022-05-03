@@ -29,7 +29,7 @@ pub fn ml_extract_structural_indices(
     mut extract_structural_indices_state: ocaml::Pointer<ExtractStructuralIndicesState>,
     input: &[u8],
     mut input_index: ocaml::Uint,
-    mut output: ocaml::Array<ocaml::Uint>,
+    mut output: ocaml::bigarray::Array1<i32>,
     mut output_index: ocaml::Uint)
     -> (ocaml::Uint, ocaml::Uint)
 {
@@ -40,7 +40,7 @@ pub fn ml_extract_structural_indices(
 
         extract::safe_generic(|bit_offset| {
             unsafe {
-                output.set_unchecked(runtime, output_index, input_index + bit_offset);
+                *output.data_mut().get_unchecked_mut(output_index) = (input_index + bit_offset) as i32;
             }
             output_index += 1;
         }, bitmask);

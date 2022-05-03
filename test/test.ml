@@ -5,7 +5,9 @@ let%expect_test _ =
     let actual_length = String.length test_string in
     let input = test_string ^ String.make ((64 - (actual_length mod 64)) mod 64) ' ' in
     assert (String.length input mod 64 = 0);
-    let indices = Array.create 0 ~len:(String.length input) in
+    let indices =
+      Bigarray.Array1.create Bigarray.int32 Bigarray.c_layout (String.length input)
+    in
     let extract_structural_indices = Simd_sexp.Extract_structural_indices.create () in
     let input_index, indices_len =
       Simd_sexp.Extract_structural_indices.run
@@ -18,7 +20,7 @@ let%expect_test _ =
     assert (input_index = String.length input);
     let n_set = Int.Hash_set.create () in
     for i = 0 to indices_len - 1 do
-      Hash_set.add n_set indices.(i)
+      Hash_set.add n_set (Int32.to_int_exn indices.{i})
     done;
     printf "%s\n" test_string;
     for i = 0 to actual_length do

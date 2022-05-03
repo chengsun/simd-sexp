@@ -9,7 +9,7 @@ module Extract_structural_indices = struct
     :  t
     -> string
     -> int
-    -> int array
+    -> (int32, Bigarray.int32_elt, Bigarray.c_layout) Bigarray.Array1.t
     -> int
     -> int * int
     = "ml_extract_structural_indices"
@@ -34,13 +34,13 @@ end
 module State = struct
   type t =
     { mutable atom_buffer : bytes
-    ; indices_buffer : int array
+    ; indices_buffer : (int32, Bigarray.int32_elt, Bigarray.c_layout) Bigarray.Array1.t
     ; extract_structural_indices : Extract_structural_indices.t
     }
 
   let create () =
     { atom_buffer = Bytes.create 128
-    ; indices_buffer = Array.create 0 ~len:128
+    ; indices_buffer = Bigarray.Array1.create Bigarray.int32 Bigarray.c_layout 128
     ; extract_structural_indices = Extract_structural_indices.create ()
     }
   ;;
@@ -84,27 +84,19 @@ module State = struct
   ;;
 
   let process_one t stack ~input ~indices_index ~indices_len:(_ : int) =
-    let this_index = Array.unsafe_get t.indices_buffer indices_index in
+    let[@inline always] index i =
+      Bigarray.Array1.unsafe_get t.indices_buffer i |> Int32.to_int_trunc
+    in
+    let this_index = index indices_index in
     match String.unsafe_get input this_index with
     | '(' -> Stack.Open stack, indices_index + 1
     | ')' -> emit_closing stack, indices_index + 1
     | ' ' | '\t' | '\n' -> stack, indices_index + 1
     | '"' ->
-      ( emit_atom_quoted
-          t
-          stack
-          input
-          (this_index + 1)
-          (Array.unsafe_get t.indices_buffer (indices_index + 1))
+      ( emit_atom_quoted t stack input (this_index + 1) (index (indices_index + 1))
       , indices_index + 2 )
     | _ ->
-      ( emit_atom
-          t
-          stack
-          input
-          this_index
-          (Array.unsafe_get t.indices_buffer (indices_index + 1))
-      , indices_index + 1 )
+      emit_atom t stack input this_index (index (indices_index + 1)), indices_index + 1
   ;;
 
   let process_eof (_ : t) stack = emit_eof stack
@@ -116,12 +108,12 @@ module State = struct
         then input_index, indices_index, indices_len
         else (
           let n_unconsumed_indices = indices_len - indices_index in
-          Array.blit
-            ~src:t.indices_buffer
-            ~src_pos:indices_index
-            ~dst:t.indices_buffer
-            ~dst_pos:0
-            ~len:n_unconsumed_indices;
+          for i = 0 to n_unconsumed_indices - 1 do
+            Bigarray.Array1.unsafe_set
+              t.indices_buffer
+              i
+              (Bigarray.Array1.unsafe_get t.indices_buffer (indices_index + i))
+          done;
           let input_index', indices_len =
             Extract_structural_indices.run
               t.extract_structural_indices

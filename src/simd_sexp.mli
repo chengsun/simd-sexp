@@ -10,7 +10,7 @@ module Extract_structural_indices : sig
     :  t
     -> input:string
     -> input_index:int
-    -> indices:int array
+    -> indices:(int32, Bigarray.int32_elt, Bigarray.c_layout) Bigarray.Array1.t
     -> indices_index:int
     -> int * int
 end
