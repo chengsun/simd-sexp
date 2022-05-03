@@ -35,12 +35,16 @@ pub fn ml_extract_structural_indices(
 {
     use sexp_structure::Classifier;
 
-    while input_index + 64 <= input.len() && output_index + 64 <= output.len() {
+    let input_len = input.len();
+    let output_len = output.len();
+    let output_data = output.data_mut();
+
+    while input_index + 64 <= input_len && output_index + 64 <= output_len {
         let bitmask = extract_structural_indices_state.as_mut().0.structural_indices_bitmask(&input[input_index..]);
 
         extract::safe_generic(|bit_offset| {
             unsafe {
-                *output.data_mut().get_unchecked_mut(output_index) = (input_index + bit_offset) as i32;
+                *output_data.get_unchecked_mut(output_index) = (input_index + bit_offset) as i32;
             }
             output_index += 1;
         }, bitmask);
