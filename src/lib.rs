@@ -9,41 +9,46 @@ pub mod utils;
 pub mod vector_classifier;
 pub mod xor_masked_adjacent;
 
-pub fn extract_structural_indices<OutF: FnMut(usize) -> ()>(input: &[u8], mut output: OutF) {
-    use sexp_structure::Classifier;
+// Needs to be in a Box<> for alignment guarantees (which the OCaml GC cannot
+// provide when it's relocating stuff)
+pub struct ExtractStructuralIndicesState(Box<sexp_structure::Avx2>);
 
-    let n = input.len();
+ocaml::custom! (ExtractStructuralIndicesState);
 
+#[ocaml::func]
+pub fn ml_extract_structural_indices_create_state(_unit: ocaml::Value) -> ExtractStructuralIndicesState {
     // TODO
     let clmul = clmul::Sse2Pclmulqdq::new().unwrap();
     let vector_classifier_builder = vector_classifier::Avx2Builder::new().unwrap();
     let xor_masked_adjacent = xor_masked_adjacent::Bmi2::new().unwrap();
-    let mut sexp_structure_classifier = sexp_structure::Avx2::new(clmul, vector_classifier_builder, xor_masked_adjacent);
-
-    assert!(n % 64 == 0);
-
-    let mut i = 0;
-    while i < n {
-        let bitmask = sexp_structure_classifier.structural_indices_bitmask(&input[i..]);
-        extract::safe_generic(|bit_offset| { output(i + bit_offset) }, bitmask);
-        i += 64;
-    }
+    ExtractStructuralIndicesState(Box::new(sexp_structure::Avx2::new(clmul, vector_classifier_builder, xor_masked_adjacent)))
 }
 
 #[ocaml::func(runtime)]
 pub fn ml_extract_structural_indices(
+    mut extract_structural_indices_state: ocaml::Pointer<ExtractStructuralIndicesState>,
     input: &[u8],
+    mut input_index: ocaml::Uint,
     mut output: ocaml::Array<ocaml::Uint>,
-    mut output_index: ocaml::Uint,
-    start_offset: ocaml::Uint)
-    -> ocaml::Uint
+    mut output_index: ocaml::Uint)
+    -> (ocaml::Uint, ocaml::Uint)
 {
-    assert!(output.len() >= output_index + input.len());
-    extract_structural_indices(input, |bit_offset| {
-        unsafe { output.set_unchecked(runtime, output_index, start_offset + bit_offset); }
-        output_index += 1;
-    });
-    output_index
+    use sexp_structure::Classifier;
+
+    while input_index + 64 <= input.len() && output_index + 64 <= output.len() {
+        let bitmask = extract_structural_indices_state.as_mut().0.structural_indices_bitmask(&input[input_index..]);
+
+        extract::safe_generic(|bit_offset| {
+            unsafe {
+                output.set_unchecked(runtime, output_index, input_index + bit_offset);
+            }
+            output_index += 1;
+        }, bitmask);
+
+        input_index += 64;
+    }
+
+    (input_index, output_index)
 }
 
 #[ocaml::func]

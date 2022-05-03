@@ -6,13 +6,16 @@ let%expect_test _ =
     let input = test_string ^ String.make ((64 - (actual_length mod 64)) mod 64) ' ' in
     assert (String.length input mod 64 = 0);
     let indices = Array.create 0 ~len:(String.length input) in
-    let indices_len =
-      Simd_sexp.extract_structural_indices
+    let extract_structural_indices = Simd_sexp.Extract_structural_indices.create () in
+    let input_index, indices_len =
+      Simd_sexp.Extract_structural_indices.run
+        extract_structural_indices
         ~input
-        ~output:indices
-        ~output_index:0
-        ~start_offset:0
+        ~input_index:0
+        ~indices
+        ~indices_index:0
     in
+    assert (input_index = String.length input);
     let n_set = Int.Hash_set.create () in
     for i = 0 to indices_len - 1 do
       Hash_set.add n_set indices.(i)
@@ -24,7 +27,7 @@ let%expect_test _ =
     printf "\n";
     (* Stage 2: check the state machine *)
     let state = Simd_sexp.State.create () in
-    Simd_sexp.State.process_all state ~input ~indices ~indices_len
+    Simd_sexp.State.process_all state ~input
     |> List.iter ~f:(fun sexp -> printf !"> %{Sexp#hum}\n" sexp);
     printf "\n\n"
   in
