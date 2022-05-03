@@ -99,21 +99,26 @@ impl<'a> parser::SexpFactory for OCamlSexpFactory<'a> {
     fn atom(&self, a: &[u8]) -> Self::Sexp {
         unsafe {
             let inner_value = ocaml::Value::bytes(a);
-            let mut atom_value = ocaml::Value::alloc_small(1, ocaml::Tag(0));
-            atom_value.store_field(&self.0, 0, inner_value);
+            let atom_value = ocaml::Value::alloc_small(1, ocaml::Tag(0));
+            //atom_value.store_field(&self.0, 0, inner_value);
+            *ocaml::sys::field(atom_value.raw().0, 0) = inner_value.raw().0;
             atom_value
         }
     }
 
     fn list(&self, xs: &[Self::Sexp]) -> Self::Sexp {
         unsafe {
-            let mut inner = ocaml::List::empty();
+            let mut inner = ocaml::Value::unit();
             for x in xs.iter().rev() {
-                inner = inner.add(&self.0, x.clone());
+                let dest = ocaml::Value::alloc_small(2, ocaml::Tag(0));
+                *ocaml::sys::field(dest.raw().0, 0) = x.raw().0;
+                *ocaml::sys::field(dest.raw().0, 1) = inner.raw().0;
+                inner = dest;
             }
             let inner_value = inner.into_value(&self.0);
-            let mut list_value = ocaml::Value::alloc_small(1, ocaml::Tag(1));
-            list_value.store_field(&self.0, 0, inner_value);
+            let list_value = ocaml::Value::alloc_small(1, ocaml::Tag(1));
+            //list_value.store_field(&self.0, 0, inner_value);
+            *ocaml::sys::field(list_value.raw().0, 0) = inner_value.raw().0;
             list_value
         }
     }

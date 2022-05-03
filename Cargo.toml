@@ -15,7 +15,7 @@ criterion = "0.3"
 rand = "0.8"
 
 [profile.release]
-lto = 'thin'
+lto = 'fat'
 
 [[bench]]
 name = "benches"
