@@ -11,7 +11,7 @@ fn bench_parser(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(input_pp.len() as u64));
         group.bench_function("rust",
                              |b| b.iter(|| {
-                                 let mut parser = parser::State::new(rust_parser::RustSexpFactory::new());
+                                 let mut parser = parser::State::new(parser::SimpleVisitor::new(rust_parser::RustSexpFactory::new()));
                                  let result = parser.process_all(input_pp);
                                  black_box(result)
                              }));
@@ -26,7 +26,7 @@ fn bench_parser(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(input_mach.len() as u64));
         group.bench_function("rust",
                              |b| b.iter(|| {
-                                 let mut parser = parser::State::new(rust_parser::RustSexpFactory::new());
+                                 let mut parser = parser::State::new(parser::SimpleVisitor::new(rust_parser::RustSexpFactory::new()));
                                  let result = parser.process_all(input_mach);
                                  black_box(result)
                              }));

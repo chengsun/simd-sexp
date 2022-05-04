@@ -129,7 +129,7 @@ unsafe impl<T: ocaml::IntoValue> ocaml::IntoValue for OCamlResult<T> {
 #[ocaml::func(rt)]
 pub fn ml_parse_sexp(input: &[u8]) -> OCamlResult<Vec<ocaml::Value>> {
 
-    let mut parser = parser::State::new(OCamlSexpFactory::new(rt));
+    let mut parser = parser::State::new(parser::SimpleVisitor::new(OCamlSexpFactory::new(rt)));
     let result = parser.process_all(input);
     OCamlResult(result.map_err(|err| err.to_string()))
 }
@@ -145,7 +145,7 @@ impl ocaml::Custom for rust_parser::RustSexp {
 #[ocaml::func]
 pub fn ml_parse_sexp_to_rust(input: &[u8]) -> OCamlResult<Vec<rust_parser::RustSexp>> {
 
-    let mut parser = parser::State::new(rust_parser::RustSexpFactory::new());
+    let mut parser = parser::State::new(parser::SimpleVisitor::new(rust_parser::RustSexpFactory::new()));
     let result = parser.process_all(input);
     OCamlResult(result.map_err(|err| err.to_string()))
 }
