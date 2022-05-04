@@ -7,8 +7,12 @@ edition = "2021"
 [lib]
 crate-type = ["lib", "staticlib"]
 
+[features]
+default = []
+ocaml = ["dep:ocaml"]
+
 [dependencies]
-ocaml = "0.22"
+ocaml = { version = "0.22", optional = true }
 
 [dev-dependencies]
 criterion = "0.3"

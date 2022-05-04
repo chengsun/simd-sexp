@@ -21,6 +21,7 @@ pub struct State<SexpFactoryT: SexpFactory> {
 pub enum Error {
     UnmatchedOpenParen,
     UnmatchedCloseParen,
+    UnclosedQuote,
     InvalidEscape,
 }
 
@@ -82,7 +83,7 @@ impl<SexpFactoryT: SexpFactory> State<SexpFactoryT> {
                 let start_index = indices_buffer[0] + 1;
                 let end_index =
                     if indices_buffer.len() < 2 {
-                        return Error::UnclosedQuote
+                        return Err(Error::UnclosedQuote);
                     } else {
                         indices_buffer[1]
                     };

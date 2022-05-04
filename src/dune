@@ -6,7 +6,7 @@
  (action
   (no-infer
    (progn
-    (run cargo build --manifest-path %{project_root}/../../Cargo.toml --target-dir %{project_root}/../../target --release)
+    (run cargo build --manifest-path %{project_root}/../../Cargo.toml --target-dir %{project_root}/../../target --release --features ocaml)
     (run cp %{project_root}/../../target/release/libsimd_sexp.a
       libsimd_sexp.a)))))
 
