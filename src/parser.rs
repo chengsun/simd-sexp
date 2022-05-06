@@ -156,43 +156,36 @@ impl<VisitorT: Visitor> State<VisitorT> {
         use sexp_structure::Classifier;
 
         let mut input_index = 0;
-        let mut indices_index = 0;
         let mut indices_len = 0;
 
         loop {
-            if unlikely(indices_index + 2 > indices_len) && likely(input_index < input.len()) {
-                let n_unconsumed_indices = indices_len - indices_index;
-                for i in 0..n_unconsumed_indices {
-                    self.indices_buffer[i] = self.indices_buffer[indices_index + i];
-                }
+            self.sexp_structure_classifier.structural_indices_bitmask(
+                &input[input_index..],
+                |bitmask, bitmask_len| {
+                    extract::safe_generic(|bit_offset| {
+                        self.indices_buffer[indices_len] = input_index + bit_offset;
+                        indices_len += 1;
+                    }, bitmask);
 
-                indices_index = 0;
-                indices_len = n_unconsumed_indices;
+                    input_index += bitmask_len;
+                    if indices_len + 64 <= INDICES_BUFFER_MAX_LEN {
+                        sexp_structure::CallbackResult::Continue
+                    } else {
+                        sexp_structure::CallbackResult::Finish
+                    }
+                });
 
-                self.sexp_structure_classifier.structural_indices_bitmask(
-                    &input[input_index..],
-                    |bitmask, bitmask_len| {
-                        extract::safe_generic(|bit_offset| {
-                            self.indices_buffer[indices_len] = input_index + bit_offset;
-                            indices_len += 1;
-                        }, bitmask);
+            let input_fully_consumed = input_index >= input.len();
 
-                        input_index += bitmask_len;
-                        if indices_len + 64 <= INDICES_BUFFER_MAX_LEN {
-                            sexp_structure::CallbackResult::Continue
-                        } else {
-                            sexp_structure::CallbackResult::Finish
-                        }
-                    });
-            }
-
-            if unlikely(indices_index >= indices_len) {
-                assert!(input_index == input.len());
-                return self.process_eof();
-            } else {
+            for indices_index in 0..(if input_fully_consumed { indices_len } else { indices_len - 1 }) {
                 self.process_one(&input, indices_index, indices_len)?;
-                indices_index += 1;
             }
+            if input_fully_consumed {
+                return self.process_eof();
+            }
+
+            self.indices_buffer[0] = self.indices_buffer[indices_len - 1];
+            indices_len = 1;
         }
     }
 }
