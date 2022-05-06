@@ -11,6 +11,9 @@ crate-type = ["lib", "staticlib"]
 default = []
 ocaml = ["dep:ocaml"]
 
+[profile.bench]
+debug = true
+
 [dependencies]
 ocaml = { version = "0.22", optional = true }
 

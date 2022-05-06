@@ -4,7 +4,7 @@ use simd_sexp::*;
 
 fn bench_parser(c: &mut Criterion) {
     {
-        let input_pp = std::fs::read_to_string("/home/csun/simd-sexp/test_data.pp.sexp").unwrap();
+        let input_pp = std::fs::read_to_string("/home/user/simd-sexp/test_data.pp.sexp").unwrap();
         let input_pp = input_pp.as_bytes();
 
         let mut group = c.benchmark_group("parser-pp");
@@ -25,7 +25,7 @@ fn bench_parser(c: &mut Criterion) {
     }
 
     {
-        let input_mach = std::fs::read_to_string("/home/csun/simd-sexp/test_data.mach.sexp").unwrap();
+        let input_mach = std::fs::read_to_string("/home/user/simd-sexp/test_data.mach.sexp").unwrap();
         let input_mach = input_mach.as_bytes();
 
         let mut group = c.benchmark_group("parser-mach");

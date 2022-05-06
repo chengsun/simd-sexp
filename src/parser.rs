@@ -61,6 +61,7 @@ pub struct State<VisitorT: Visitor> {
     unescape: escape::GenericUnescape,
     context_stack: Vec<VisitorT::Context>,
     indices_buffer: [usize; INDICES_BUFFER_MAX_LEN],
+    quote_state: bool,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -93,7 +94,8 @@ impl<VisitorT: Visitor> State<VisitorT> {
             sexp_structure_classifier,
             unescape,
             context_stack: Vec::new(),
-            indices_buffer: [0; INDICES_BUFFER_MAX_LEN]
+            indices_buffer: [0; INDICES_BUFFER_MAX_LEN],
+            quote_state: false,
         }
     }
 
@@ -104,36 +106,36 @@ impl<VisitorT: Visitor> State<VisitorT> {
         Ok (self.visitor.eof())
     }
 
-    fn process_one(&mut self, input: &[u8], indices_index: usize, indices_len: usize) -> Result<usize, Error> {
+    fn process_one(&mut self, input: &[u8], indices_index: usize, indices_len: usize) -> Result<(), Error> {
         let indices_buffer = &self.indices_buffer[indices_index..indices_len];
         match input[indices_buffer[0]] {
             b'(' => {
                 let new_context = self.visitor.list_open(self.context_stack.last_mut());
                 self.context_stack.push(new_context);
-                Ok(1)
             },
             b')' => {
                 let context = self.context_stack.pop().ok_or(Error::UnmatchedCloseParen)?;
                 self.visitor.list_close(context);
-                Ok(1)
             },
-            b' ' | b'\t' | b'\n' => Ok(1),
+            b' ' | b'\t' | b'\n' => (),
             b'"' => {
-                use escape::Unescape;
-                let start_index = indices_buffer[0] + 1;
-                let end_index =
-                    if indices_buffer.len() < 2 {
-                        return Err(Error::UnclosedQuote);
-                    } else {
-                        indices_buffer[1]
-                    };
-                let mut atom_string = input[start_index..end_index].to_vec();
-                let atom_string_len =
-                    self.unescape.unescape_in_place(&mut atom_string[..])
-                    .ok_or(Error::InvalidEscape)?;
-                atom_string.truncate(atom_string_len);
-                self.visitor.atom(&atom_string[..], self.context_stack.last_mut());
-                Ok(2)
+                self.quote_state = !self.quote_state;
+                if self.quote_state {
+                    use escape::Unescape;
+                    let start_index = indices_buffer[0] + 1;
+                    let end_index =
+                        if indices_buffer.len() < 2 {
+                            return Err(Error::UnclosedQuote);
+                        } else {
+                            indices_buffer[1]
+                        };
+                    let mut atom_string = input[start_index..end_index].to_vec();
+                    let atom_string_len =
+                        self.unescape.unescape_in_place(&mut atom_string[..])
+                        .ok_or(Error::InvalidEscape)?;
+                    atom_string.truncate(atom_string_len);
+                    self.visitor.atom(&atom_string[..], self.context_stack.last_mut());
+                }
             },
             _ => {
                 let start_index = indices_buffer[0];
@@ -144,9 +146,9 @@ impl<VisitorT: Visitor> State<VisitorT> {
                         indices_buffer[1]
                     };
                 self.visitor.atom(&input[start_index..end_index], self.context_stack.last_mut());
-                Ok(1)
             }
         }
+        Ok(())
     }
 
     pub fn process_all(&mut self, input: &[u8]) -> Result<VisitorT::FinalReturnType, Error> {
@@ -187,8 +189,8 @@ impl<VisitorT: Visitor> State<VisitorT> {
                 assert!(input_index == input.len());
                 return self.process_eof();
             } else {
-                let indices_consumed = self.process_one(&input, indices_index, indices_len)?;
-                indices_index = indices_index + indices_consumed;
+                self.process_one(&input, indices_index, indices_len)?;
+                indices_index += 1;
             }
         }
     }
