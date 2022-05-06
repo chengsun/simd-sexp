@@ -152,7 +152,7 @@ mod unescape_tests {
 
     impl<T: Unescape> Testable for T {
         fn run_test(&self, input: &[u8], output: Option<&[u8]>) {
-            let mut actual_output_scratch: Vec<u8> = (0..input.len()).map(|_| 0u8).collect();
+            let mut actual_output_scratch = vec![0u8; input.len()];
             let actual_output =
                 match self.unescape(input, &mut actual_output_scratch[..]) {
                     Some(actual_output_count) => Some(&actual_output_scratch[0..actual_output_count]),

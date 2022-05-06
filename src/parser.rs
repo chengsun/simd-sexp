@@ -120,7 +120,7 @@ impl<VisitorT: Visitor> State<VisitorT> {
             b' ' | b'\t' | b'\n' => Ok(1),
             b'"' => {
                 use escape::Unescape;
-                let mut atom_string: Vec<u8> = (0..input.len()).map(|_| 0).collect();
+                let mut atom_string = vec![0u8; input.len()];
                 let start_index = indices_buffer[0] + 1;
                 let end_index =
                     if indices_buffer.len() < 2 {

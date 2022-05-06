@@ -131,8 +131,8 @@ mod varint_tests {
 
     impl<D: Decoder<usize>, E: Encoder<usize>> Testable for (D, E) {
         fn run_test(&self, decoded: &[usize], encoded: &[u8]) {
-            let mut actual_decoded_scratch: Vec<usize> = (0..(decoded.len() * 10)).map(|_| 0usize).collect();
-            let mut actual_encoded_scratch: Vec<u8> = (0..(encoded.len() * 10)).map(|_| 0u8).collect();
+            let mut actual_decoded_scratch = vec![0usize; decoded.len() * 10];
+            let mut actual_encoded_scratch = vec![0u8; encoded.len() * 10];
             let actual_decoded = {
                 let (e, d) = self.0.decode(encoded, &mut actual_decoded_scratch[..]);
                 assert_eq!(e, encoded.len());

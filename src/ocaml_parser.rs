@@ -61,7 +61,7 @@ pub fn ml_unescape(input: &[u8], pos: ocaml::Uint, len: ocaml::Uint) -> Option<B
     use escape::Unescape;
 
     let input = &input[pos..pos+len];
-    let mut output: Vec<u8> = (0..input.len()).map(|_| 0u8).collect();
+    let mut output = [0u8; input.len()];
 
     // TODO: nongeneric version
     let unescape = escape::GenericUnescape::new();
