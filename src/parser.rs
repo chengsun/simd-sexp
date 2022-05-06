@@ -120,7 +120,6 @@ impl<VisitorT: Visitor> State<VisitorT> {
             b' ' | b'\t' | b'\n' => Ok(1),
             b'"' => {
                 use escape::Unescape;
-                let mut atom_string = vec![0u8; input.len()];
                 let start_index = indices_buffer[0] + 1;
                 let end_index =
                     if indices_buffer.len() < 2 {
@@ -128,10 +127,9 @@ impl<VisitorT: Visitor> State<VisitorT> {
                     } else {
                         indices_buffer[1]
                     };
+                let mut atom_string = input[start_index..end_index].to_vec();
                 let atom_string_len =
-                    self.unescape.unescape(
-                        &input[start_index..end_index],
-                        &mut atom_string[..])
+                    self.unescape.unescape_in_place(&mut atom_string[..])
                     .ok_or(Error::InvalidEscape)?;
                 atom_string.truncate(atom_string_len);
                 self.visitor.atom(&atom_string[..], self.context_stack.last_mut());

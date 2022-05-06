@@ -1,5 +1,5 @@
 pub trait Unescape {
-    fn unescape(&self, input: &[u8], output: &mut [u8]) -> Option<usize>;
+    fn unescape_in_place(&self, in_out: &mut [u8]) -> Option<usize>;
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -12,43 +12,43 @@ impl GenericUnescape {
 }
 
 impl Unescape for GenericUnescape {
-    fn unescape(&self, input: &[u8], output: &mut [u8]) -> Option<usize> {
+    fn unescape_in_place(&self, in_out: &mut [u8]) -> Option<usize> {
         let mut input_index = 0;
         let mut output_index = 0;
-        while input_index < input.len() {
-            if input[input_index] == b'\\' {
+        while input_index < in_out.len() {
+            if in_out[input_index] == b'\\' {
                 input_index = input_index + 1;
-                if input_index >= input.len() {
+                if input_index >= in_out.len() {
                     return None;
                 }
-                match input[input_index] {
+                match in_out[input_index] {
                     ch @ (b'"' | b'\'' | b'\\') => {
-                        output[output_index] = ch;
+                        in_out[output_index] = ch;
                         input_index += 1;
                         output_index += 1;
                     },
                     b'b' => {
-                        output[output_index] = b'\x07';
+                        in_out[output_index] = b'\x07';
                         input_index += 1;
                         output_index += 1;
                     },
                     b'n' => {
-                        output[output_index] = b'\n';
+                        in_out[output_index] = b'\n';
                         input_index += 1;
                         output_index += 1;
                     },
                     b'r' => {
-                        output[output_index] = b'\r';
+                        in_out[output_index] = b'\r';
                         input_index += 1;
                         output_index += 1;
                     },
                     b't' => {
-                        output[output_index] = b'\t';
+                        in_out[output_index] = b'\t';
                         input_index += 1;
                         output_index += 1;
                     },
                     b'x' => {
-                        if input_index + 3 > input.len() {
+                        if input_index + 3 > in_out.len() {
                             return None;
                         }
                         fn digit_of_char(ch: u8) -> Option<u8> {
@@ -59,8 +59,8 @@ impl Unescape for GenericUnescape {
                                 _ => None,
                             }
                         }
-                        output[output_index] =
-                            match (digit_of_char(input[input_index + 1]), digit_of_char(input[input_index + 2])) {
+                        in_out[output_index] =
+                            match (digit_of_char(in_out[input_index + 1]), digit_of_char(in_out[input_index + 2])) {
                                 (Some(d1), Some(d2)) => Some(d1 * 16 + d2),
                                 _ => None
                             }?;
@@ -68,7 +68,7 @@ impl Unescape for GenericUnescape {
                         output_index += 1;
                     },
                     b'0'..=b'9' => {
-                        if input_index + 3 > input.len() {
+                        if input_index + 3 > in_out.len() {
                             return None;
                         }
                         fn digit_of_char(ch: u8) -> Option<usize> {
@@ -77,10 +77,10 @@ impl Unescape for GenericUnescape {
                                 _ => None,
                             }
                         }
-                        output[output_index] =
-                            match (digit_of_char(input[input_index + 0]),
-                                   digit_of_char(input[input_index + 1]),
-                                   digit_of_char(input[input_index + 2])) {
+                        in_out[output_index] =
+                            match (digit_of_char(in_out[input_index + 0]),
+                                   digit_of_char(in_out[input_index + 1]),
+                                   digit_of_char(in_out[input_index + 2])) {
                                 (Some(d1), Some(d2), Some(d3)) => (d1 * 100 + d2 * 10 + d3).try_into().ok(),
                                 _ => None
                             }?;
@@ -88,12 +88,12 @@ impl Unescape for GenericUnescape {
                         output_index += 1;
                     },
                     _ => {
-                        output[output_index] = b'\\';
+                        in_out[output_index] = b'\\';
                         output_index += 1;
                     }
                 }
             } else {
-                output[output_index] = input[input_index];
+                in_out[output_index] = in_out[input_index];
                 input_index += 1;
                 output_index += 1;
             }
@@ -152,9 +152,9 @@ mod unescape_tests {
 
     impl<T: Unescape> Testable for T {
         fn run_test(&self, input: &[u8], output: Option<&[u8]>) {
-            let mut actual_output_scratch = vec![0u8; input.len()];
+            let mut actual_output_scratch = input.to_vec();
             let actual_output =
-                match self.unescape(input, &mut actual_output_scratch[..]) {
+                match self.unescape_in_place(&mut actual_output_scratch[..]) {
                     Some(actual_output_count) => Some(&actual_output_scratch[0..actual_output_count]),
                     None => None
                 };

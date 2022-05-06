@@ -52,27 +52,19 @@ fn bench_unescape(c: &mut Criterion) {
     // TODO: randomise + more realistic (need to throw off branch prediction)
     let input_all_backslash_64 = [b'\\'; 64];
     let input_all_misc_64 = [b'x'; 64];
-    let input_all_backslash_6400 = [b'\\'; 6400];
-    let input_all_misc_6400 = [b'x'; 6400];
-
-    let mut output_scratch = [0u8; 6400];
 
     let generic_unescape = escape::GenericUnescape::new();
 
     let mut group = c.benchmark_group("unescape-64");
     group.throughput(Throughput::Bytes(64));
     group.bench_function("generic-all-backslash",
-                         |b| b.iter(|| black_box(generic_unescape.unescape(&input_all_backslash_64[..], &mut output_scratch[..]))));
+                         |b| b.iter_batched(|| input_all_backslash_64.clone(),
+                                            |mut in_out| black_box(generic_unescape.unescape_in_place(&mut in_out[..])),
+                                            BatchSize::SmallInput));
     group.bench_function("generic-all-misc",
-                         |b| b.iter(|| black_box(generic_unescape.unescape(&input_all_misc_64[..], &mut output_scratch[..]))));
-    group.finish();
-
-    let mut group = c.benchmark_group("unescape-6400");
-    group.throughput(Throughput::Bytes(6400));
-    group.bench_function("generic-all-backslash",
-                         |b| b.iter(|| black_box(generic_unescape.unescape(&input_all_backslash_6400[..], &mut output_scratch[..]))));
-    group.bench_function("generic-all-misc",
-                         |b| b.iter(|| black_box(generic_unescape.unescape(&input_all_misc_6400[..], &mut output_scratch[..]))));
+                         |b| b.iter_batched(|| input_all_misc_64.clone(),
+                                            |mut in_out| black_box(generic_unescape.unescape_in_place(&mut in_out[..])),
+                                            BatchSize::SmallInput));
     group.finish();
 }
 
