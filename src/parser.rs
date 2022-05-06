@@ -2,12 +2,12 @@ use crate::{escape, extract, sexp_structure};
 
 
 pub trait Visitor {
-    type ListState;
+    type Context;
     type IntermediateReturnType;
     type FinalReturnType;
-    fn atom(&mut self, atom: &[u8]) -> Self::IntermediateReturnType;
-    fn list_open(&mut self) -> Self::ListState;
-    fn list_close(&mut self, list_state: Self::ListState) -> Self::IntermediateReturnType;
+    fn atom(&mut self, atom: &[u8], parent_context: Option<&mut Self::Context>) -> Self::IntermediateReturnType;
+    fn list_open(&mut self, parent_context: Option<&mut Self::Context>) -> Self::Context;
+    fn list_close(&mut self, context: Self::Context) -> Self::IntermediateReturnType;
     fn eof(&mut self) -> Self::FinalReturnType;
 }
 
@@ -32,16 +32,17 @@ impl<SexpFactoryT: SexpFactory> SimpleVisitor<SexpFactoryT> {
 }
 
 impl<SexpFactoryT: SexpFactory> Visitor for SimpleVisitor<SexpFactoryT> {
-    type ListState = usize;
+    type Context = usize;
     type IntermediateReturnType = ();
     type FinalReturnType = Vec<SexpFactoryT::Sexp>;
-    fn atom(&mut self, atom: &[u8]) -> Self::IntermediateReturnType {
+    fn atom(&mut self, atom: &[u8], _: Option<&mut Self::Context>) -> Self::IntermediateReturnType {
         self.sexp_stack.push(self.sexp_factory.atom(atom));
     }
-    fn list_open(&mut self) -> Self::ListState {
+    fn list_open(&mut self, _: Option<&mut Self::Context>) -> Self::Context {
         self.sexp_stack.len()
     }
-    fn list_close(&mut self, open_index: Self::ListState) -> Self::IntermediateReturnType {
+    fn list_close(&mut self, context: Self::Context) -> Self::IntermediateReturnType {
+        let open_index = context;
         let inner = self.sexp_stack.split_off(open_index);
         let sexp = self.sexp_factory.list(inner);
         self.sexp_stack.push(sexp);
@@ -58,7 +59,7 @@ pub struct State<VisitorT: Visitor> {
     visitor: VisitorT,
     sexp_structure_classifier: sexp_structure::Avx2,
     unescape: escape::GenericUnescape,
-    list_state_stack: Vec<VisitorT::ListState>,
+    context_stack: Vec<VisitorT::Context>,
     indices_buffer: [usize; INDICES_BUFFER_MAX_LEN],
 }
 
@@ -91,13 +92,13 @@ impl<VisitorT: Visitor> State<VisitorT> {
             visitor,
             sexp_structure_classifier,
             unescape,
-            list_state_stack: Vec::new(),
+            context_stack: Vec::new(),
             indices_buffer: [0; INDICES_BUFFER_MAX_LEN]
         }
     }
 
     fn process_eof(&mut self) -> Result<VisitorT::FinalReturnType, Error> {
-        if self.list_state_stack.len() > 0 {
+        if self.context_stack.len() > 0 {
             return Err(Error::UnmatchedOpenParen);
         }
         Ok (self.visitor.eof())
@@ -107,12 +108,13 @@ impl<VisitorT: Visitor> State<VisitorT> {
         let indices_buffer = &self.indices_buffer[indices_index..indices_len];
         match input[indices_buffer[0]] {
             b'(' => {
-                self.list_state_stack.push(self.visitor.list_open());
+                let new_context = self.visitor.list_open(self.context_stack.last_mut());
+                self.context_stack.push(new_context);
                 Ok(1)
             },
             b')' => {
-                let list_state = self.list_state_stack.pop().ok_or(Error::UnmatchedCloseParen)?;
-                self.visitor.list_close(list_state);
+                let context = self.context_stack.pop().ok_or(Error::UnmatchedCloseParen)?;
+                self.visitor.list_close(context);
                 Ok(1)
             },
             b' ' | b'\t' | b'\n' => Ok(1),
@@ -132,7 +134,7 @@ impl<VisitorT: Visitor> State<VisitorT> {
                         &mut atom_string[..])
                     .ok_or(Error::InvalidEscape)?;
                 atom_string.truncate(atom_string_len);
-                self.visitor.atom(&atom_string[..]);
+                self.visitor.atom(&atom_string[..], self.context_stack.last_mut());
                 Ok(2)
             },
             _ => {
@@ -143,7 +145,7 @@ impl<VisitorT: Visitor> State<VisitorT> {
                     } else {
                         indices_buffer[1]
                     };
-                self.visitor.atom(&input[start_index..end_index]);
+                self.visitor.atom(&input[start_index..end_index], self.context_stack.last_mut());
                 Ok(1)
             }
         }

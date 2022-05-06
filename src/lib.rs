@@ -10,5 +10,6 @@ pub mod ranges;
 pub mod sexp_structure;
 pub mod start_stop_transitions;
 pub mod utils;
+pub mod varint;
 pub mod vector_classifier;
 pub mod xor_masked_adjacent;
