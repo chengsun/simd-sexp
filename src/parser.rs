@@ -1,4 +1,5 @@
 use crate::{escape, extract, sexp_structure};
+use crate::utils::*;
 
 
 pub trait Visitor {
@@ -140,7 +141,7 @@ impl<VisitorT: Visitor> State<VisitorT> {
             _ => {
                 let start_index = indices_buffer[0];
                 let end_index =
-                    if indices_buffer.len() < 2 {
+                    if unlikely(indices_buffer.len() < 2) {
                         input.len()
                     } else {
                         indices_buffer[1]
@@ -159,7 +160,7 @@ impl<VisitorT: Visitor> State<VisitorT> {
         let mut indices_len = 0;
 
         loop {
-            if indices_index + 2 > indices_len && input_index < input.len() {
+            if unlikely(indices_index + 2 > indices_len) && likely(input_index < input.len()) {
                 let n_unconsumed_indices = indices_len - indices_index;
                 for i in 0..n_unconsumed_indices {
                     self.indices_buffer[i] = self.indices_buffer[indices_index + i];
@@ -185,7 +186,7 @@ impl<VisitorT: Visitor> State<VisitorT> {
                     });
             }
 
-            if indices_index >= indices_len {
+            if unlikely(indices_index >= indices_len) {
                 assert!(input_index == input.len());
                 return self.process_eof();
             } else {

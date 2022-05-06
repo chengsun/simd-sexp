@@ -106,3 +106,19 @@ pub fn bitrev64(x: u64) -> u64 {
     let x = ((x & 0xAAAAAAAAAAAAAAAAu64) >> 1) | ((x & 0x5555555555555555u64) << 1);
     x
 }
+
+#[inline]
+#[cold]
+pub fn cold() {}
+
+#[inline]
+pub fn likely(b: bool) -> bool {
+    if !b { cold(); }
+    b
+}
+
+#[inline]
+pub fn unlikely(b: bool) -> bool {
+    if b { cold(); }
+    b
+}
