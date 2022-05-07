@@ -136,7 +136,7 @@ impl Avx2 {
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    #[target_feature(enable = "avx2")]
+    #[target_feature(enable = "avx2,sse2,ssse3,pclmulqdq")]
     unsafe fn classify_one_avx2(&self, input: __m256i) -> ClassifyOneAvx2
     {
         let lparen = _mm256_cmpeq_epi8(input, _mm256_set1_epi8('(' as i8));
@@ -159,7 +159,7 @@ impl Avx2 {
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    #[target_feature(enable = "avx2")]
+    #[target_feature(enable = "avx2,sse2,ssse3,pclmulqdq")]
     unsafe fn structural_indices_bitmask_one_avx2(&mut self, input_lo: __m256i, input_hi: __m256i) -> u64 {
         let classify_lo = self.classify_one_avx2(input_lo);
         let parens_lo = classify_lo.parens;
