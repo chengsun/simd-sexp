@@ -46,34 +46,24 @@ impl TapeVisitor {
 
 pub struct TapeVisitorContext {
     tape_start_index: usize,
-    child_count: usize,
 }
 
 impl parser::Visitor for TapeVisitor {
     type Context = TapeVisitorContext;
     type IntermediateReturnType = ();
     type FinalReturnType = Vec<u8>;
-    fn atom(&mut self, atom: &[u8], parent_context: Option<&mut TapeVisitorContext>) {
+    fn atom(&mut self, atom: &[u8], _: Option<&mut TapeVisitorContext>) {
         // TODO: lol
         let tape_start_index = self.tape.len();
-        self.tape.extend([0u8; 8]);
+        self.tape.extend([0u8; 4]);
         self.varint_encoder.encode_one(atom.len() * 2, &mut self.tape[tape_start_index..]).unwrap();
         self.tape.extend_from_slice(atom);
-        match parent_context {
-            Some(parent_context) => { parent_context.child_count += 1; },
-            None => (),
-        }
     }
-    fn list_open(&mut self, parent_context: Option<&mut TapeVisitorContext>) -> TapeVisitorContext {
-        match parent_context {
-            Some(parent_context) => { parent_context.child_count += 1; },
-            None => (),
-        }
+    fn list_open(&mut self, _: Option<&mut TapeVisitorContext>) -> TapeVisitorContext {
         let tape_start_index = self.tape.len();
-        self.tape.extend([0u8; 8]);
+        self.tape.extend([0u8; 4]);
         TapeVisitorContext {
             tape_start_index,
-            child_count: 0,
         }
     }
     fn list_close(&mut self, context: TapeVisitorContext) {

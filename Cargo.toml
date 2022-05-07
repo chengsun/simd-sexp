@@ -7,15 +7,19 @@ edition = "2021"
 [lib]
 crate-type = ["lib", "staticlib"]
 
+
 [features]
 default = []
 ocaml = ["dep:ocaml"]
+vtune = ["dep:ittapi", "dep:criterion"]
 
 [profile.bench]
 debug = true
 
 [dependencies]
 ocaml = { version = "0.22", optional = true }
+ittapi = { version = "0.3", optional = true }
+criterion = { version = "0.3", optional = true }
 
 [dev-dependencies]
 criterion = "0.3"
@@ -24,3 +28,11 @@ rand = "0.8"
 [[bench]]
 name = "benches"
 harness = false
+
+[[bin]]
+name = "profile"
+path = "bin/profile.rs"
+required-features = ["vtune"]
+
+[profile.release]
+debug = true
