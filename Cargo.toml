@@ -17,6 +17,7 @@ vtune = ["dep:ittapi", "dep:criterion"]
 debug = true
 
 [dependencies]
+memchr = "2"
 ocaml = { version = "0.22", optional = true }
 ittapi = { version = "0.3", optional = true }
 criterion = { version = "0.3", optional = true }

@@ -50,9 +50,9 @@ impl GenericUnescape {
 
 impl Unescape for GenericUnescape {
     fn unescape_in_place(&self, in_out: &mut [u8]) -> Option<(usize, usize)> {
-        let mut input_index = 0;
-        let mut output_index = 0;
-        while input_index < in_out.len() {
+        let mut input_index = memchr::memchr2(b'\"', b'\\', &in_out)?;
+        let mut output_index = input_index;
+        loop {
             match in_out[input_index] {
                 b'\\' => {
                     input_index = input_index + 1;
@@ -134,14 +134,13 @@ impl Unescape for GenericUnescape {
                 b'"' => {
                     return Some((input_index, output_index));
                 },
-                _ => {
-                    in_out[output_index] = in_out[input_index];
-                    input_index += 1;
-                    output_index += 1;
-                },
+                _ => panic!("Unexpected char"),
             }
+            let copy_len = memchr::memchr2(b'\"', b'\\', &in_out[input_index..])?;
+            unsafe { std::ptr::copy(&in_out[input_index] as *const u8, &mut in_out[output_index] as *mut u8, copy_len); }
+            input_index += copy_len;
+            output_index += copy_len;
         }
-        None
     }
 }
 
