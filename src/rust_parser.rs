@@ -90,7 +90,7 @@ impl Tape {
         let mut i = 0usize;
         let mut list_ends: Vec<usize> = Vec::new();
         loop {
-            if list_ends.last() == Some(&i) {
+            while list_ends.last() == Some(&i) {
                 list_ends.pop();
                 write!(f, ")")?;
                 *space_separator_needed = false;
@@ -180,7 +180,7 @@ pub mod two_phase {
             let mut i = 0usize;
             let mut list_ends: Vec<usize> = Vec::new();
             loop {
-                if list_ends.last() == Some(&i) {
+                while list_ends.last() == Some(&i) {
                     list_ends.pop();
                     write!(f, ")")?;
                     *space_separator_needed = false;
@@ -239,7 +239,7 @@ pub mod two_phase {
         type IntermediateReturnType = ();
         type FinalReturnType = (usize, Vec<u8>);
         fn atom(&mut self, atom: &[u8], mut parent_context: Option<&mut Phase1Context>) {
-            let varint_length = self.varint_encoder.encode_length(atom.len());
+            let varint_length = self.varint_encoder.encode_length(2 * atom.len());
             let this_size = varint_length + atom.len();
             match parent_context {
                 Some (ref mut parent_context) => { parent_context.size += this_size; },
@@ -395,4 +395,7 @@ mod parser_tests {
     #[test] fn test_12() { run_test(br#""x"foo"y""#, Ok(r#"x foo y"#)); }
     #[test] fn test_13() { run_test(br#"(x)foo(y)"#, Ok(r#"(x)foo(y)"#)); }
     #[test] fn test_14() { run_test(br#""foo\n""#, Ok(r#""foo\n""#)); }
+    #[test] fn test_15() { run_test(br#"(foo (bar baz))"#, Ok(r#"(foo(bar baz))"#)); }
+    #[test] fn test_16() { run_test(br#"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"#,
+                                    Ok(r#"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"#)); }
 }
