@@ -39,13 +39,17 @@ fn main() {
         println!("# lists:        {}", sexp_result.iter().map(count_lists).sum::<usize>());
     }
 
+    let event_frame = ittapi::Event::new("frame");
+
+    println!("Warmup");
+
     for _i in 0..10000 {
         let mut parser = parser::State::new(rust_parser::TapeVisitor::new());
         let result = parser.process_all(input_pp);
         criterion::black_box(result.unwrap());
     }
 
-    let event_frame = ittapi::Event::new("frame");
+    println!("Profiling");
 
     for _i in 0..10000 {
         let e = event_frame.start();
