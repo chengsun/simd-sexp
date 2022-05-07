@@ -5,8 +5,9 @@ fn main() {
     let input_pp = input_pp.as_bytes();
 
     {
+        let mut input_pp_v = input_pp.to_vec();
         let mut sexp_parser = parser::State::new(parser::SimpleVisitor::new(rust_parser::SexpFactory::new()));
-        let sexp_result = sexp_parser.process_all(input_pp).unwrap();
+        let sexp_result = sexp_parser.process_all(&mut input_pp_v[..]).unwrap();
         fn count_atoms(sexp: &rust_parser::Sexp) -> usize {
             match sexp {
                 rust_parser::Sexp::Atom(_) => 1,
@@ -25,12 +26,15 @@ fn main() {
                 rust_parser::Sexp::List(l) => l.iter().map(count_atom_size).sum(),
             }
         }
+        input_pp_v.copy_from_slice(input_pp);
         let mut tape_parser = parser::State::new(rust_parser::TapeVisitor::new());
-        let tape_result = tape_parser.process_all(input_pp).unwrap();
+        let tape_result = tape_parser.process_all(&mut input_pp_v[..]).unwrap();
+        input_pp_v.copy_from_slice(input_pp);
         let mut phase1_parser = parser::State::new(rust_parser::two_phase::Phase1Visitor::new());
-        let phase1_result = phase1_parser.process_all(input_pp).unwrap();
+        let phase1_result = phase1_parser.process_all(&mut input_pp_v[..]).unwrap();
+        input_pp_v.copy_from_slice(input_pp);
         let mut phase2_parser = parser::State::new(rust_parser::two_phase::Phase2Visitor::new(phase1_result));
-        let phase2_result = phase2_parser.process_all(input_pp).unwrap();
+        let phase2_result = phase2_parser.process_all(&mut input_pp_v[..]).unwrap();
         println!("Input size:     {}", input_pp.len());
         println!("Of which atoms: {}", sexp_result.iter().map(count_atom_size).sum::<usize>());
         println!("Tape size:      {}", tape_result.0.len());
@@ -44,8 +48,9 @@ fn main() {
     println!("Warmup");
 
     for _i in 0..10000 {
+        let mut input_pp_v = input_pp.to_vec();
         let mut parser = parser::State::new(rust_parser::TapeVisitor::new());
-        let result = parser.process_all(input_pp);
+        let result = parser.process_all(&mut input_pp_v[..]);
         criterion::black_box(result.unwrap());
     }
 
@@ -53,8 +58,9 @@ fn main() {
 
     for _i in 0..10000 {
         let e = event_frame.start();
+        let mut input_pp_v = input_pp.to_vec();
         let mut parser = parser::State::new(rust_parser::TapeVisitor::new());
-        let result = parser.process_all(input_pp);
+        let result = parser.process_all(&mut input_pp_v[..]);
         criterion::black_box(result.unwrap());
         std::mem::drop(e);
     }
