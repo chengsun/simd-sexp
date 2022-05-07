@@ -87,7 +87,6 @@ pub struct Tape(Vec<u8>);
 
 impl Tape {
     fn fmt_mach(&self, f: &mut std::fmt::Formatter<'_>, space_separator_needed: &mut bool) -> std::fmt::Result {
-        println!("tape: {:?}", self.0);
         let mut i = 0usize;
         let mut list_ends: Vec<usize> = Vec::new();
         loop {
@@ -165,7 +164,7 @@ impl parser::Visitor for TapeVisitor {
     }
 }
 
-mod two_phase {
+pub mod two_phase {
     use crate::{parser, varint};
 
     /**
@@ -178,7 +177,6 @@ mod two_phase {
 
     impl Tape {
         fn fmt_mach(&self, f: &mut std::fmt::Formatter<'_>, varint_decoder: &varint::GenericDecoder, space_separator_needed: &mut bool) -> std::fmt::Result {
-            println!("vartape: {:?}", self.0);
             let mut i = 0usize;
             let mut list_ends: Vec<usize> = Vec::new();
             loop {
@@ -301,7 +299,10 @@ mod two_phase {
         type IntermediateReturnType = ();
         type FinalReturnType = Tape;
         fn atom(&mut self, atom: &[u8], _: Option<&mut Phase2Context>) {
-            let varint_len = self.varint_encoder.encode_one(atom.len() * 2, &mut self.tape.0[self.tape_index..]).unwrap();
+            let varint_len =
+                self.varint_encoder.encode_one(
+                    atom.len() * 2,
+                    &mut self.tape.0[self.tape_index..]).unwrap();
             self.tape_index += varint_len;
             for &a in atom {
                 self.tape.0[self.tape_index] = a;
@@ -322,7 +323,8 @@ mod two_phase {
             let varint_length = context.varint_length as usize;
             self.varint_encoder.encode_one(
                 (self.tape_index - context.tape_start_index - varint_length) * 2 + 1,
-                &mut self.tape.0[context.tape_start_index..(context.tape_start_index + varint_length)]);
+                &mut self.tape.0[context.tape_start_index..(context.tape_start_index + varint_length)]
+            ).unwrap();
         }
         fn eof(&mut self) -> Self::FinalReturnType {
             std::mem::take(&mut self.tape)
