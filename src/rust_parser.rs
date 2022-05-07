@@ -57,15 +57,15 @@ impl std::fmt::Display for SexpMulti {
     }
 }
 
-pub struct RustSexpFactory();
+pub struct SexpFactory();
 
-impl RustSexpFactory {
+impl SexpFactory {
     pub fn new() -> Self {
-        RustSexpFactory()
+        SexpFactory()
     }
 }
 
-impl parser::SexpFactory for RustSexpFactory {
+impl parser::SexpFactory for SexpFactory {
     type Sexp = Sexp;
 
     fn atom(&self, a: &[u8]) -> Self::Sexp {
@@ -83,7 +83,7 @@ List: <len*2+1 as u32>Repr(X1)Repr(X2)...
 */
 
 #[derive(Default)]
-pub struct Tape(Vec<u8>);
+pub struct Tape(pub Vec<u8>);
 
 impl Tape {
     fn fmt_mach(&self, f: &mut std::fmt::Formatter<'_>, space_separator_needed: &mut bool) -> std::fmt::Result {
@@ -173,7 +173,7 @@ pub mod two_phase {
     */
 
     #[derive(Default)]
-    pub struct Tape(Vec<u8>);
+    pub struct Tape(pub Vec<u8>);
 
     impl Tape {
         fn fmt_mach(&self, f: &mut std::fmt::Formatter<'_>, varint_decoder: &varint::GenericDecoder, space_separator_needed: &mut bool) -> std::fmt::Result {
@@ -352,10 +352,10 @@ mod parser_tests {
         };
 
         {
-            let mut parser = parser::State::new(parser::SimpleVisitor::new(RustSexpFactory::new()));
+            let mut parser = parser::State::new(parser::SimpleVisitor::new(SexpFactory::new()));
             let sexp_or_error = parser.process_all(input);
             let output = sexp_or_error.map(|sexps| SexpMulti(sexps).to_string());
-            validate("SimpleVisitor<RustSexpFactory>", output);
+            validate("SimpleVisitor<SexpFactory>", output);
         }
 
         {
