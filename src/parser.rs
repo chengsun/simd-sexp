@@ -65,7 +65,7 @@ pub struct State<VisitorT: Visitor> {
     quote_state: bool,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
     UnmatchedOpenParen,
     UnmatchedCloseParen,

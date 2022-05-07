@@ -101,13 +101,17 @@ struct ClassifyOneAvx2 {
     atom_like: __m256i,
 }
 
+pub fn not_atom_like_lookup_tables() -> vector_classifier::LookupTables {
+    vector_classifier::LookupTables::from_accepting_chars(b" \t\n()\"").unwrap()
+}
+
 impl Avx2 {
     pub fn new() -> Option<Self> {
         let clmul = clmul::Sse2Pclmulqdq::new()?;
         let vector_classifier_builder = vector_classifier::Avx2Builder::new()?;
         let xor_masked_adjacent = xor_masked_adjacent::Bmi2::new()?;
 
-        let lookup_tables = vector_classifier::LookupTables::from_accepting_chars(b" \t\n()\"").unwrap();
+        let lookup_tables = not_atom_like_lookup_tables();
         let atom_terminator_classifier = vector_classifier_builder.build(&lookup_tables);
 
         let generic = Generic::new();

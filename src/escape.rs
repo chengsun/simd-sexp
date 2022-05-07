@@ -1,3 +1,39 @@
+pub fn escape_is_necessary(input: &[u8]) -> bool {
+    let vector_classifier = vector_classifier::GenericBuilder::new().build(&sexp_structure::not_atom_like_lookup_tables());
+    for ch in input {
+        let mut ch_copy = [ch.clone()];
+        vector_classifier.classify(&mut ch_copy);
+        if ch_copy[0] != 0 || *ch == b'\\' || *ch < 0x20 || *ch >= 0x80 {
+            return true;
+        }
+    }
+    false
+}
+
+pub fn escape(input: &[u8]) -> Vec<u8> {
+    let mut output: Vec<u8> = Vec::new();
+    fn hex_char(i: u8) -> u8 {
+        match i {
+            (0..=9) => i + b'0',
+            (10..=15) => i - 10 + b'a',
+            _ => panic!("invalid integer to encode into single hex char: {}", i),
+        }
+    }
+    for ch in input {
+        match ch {
+            b'"' => output.extend(b"\\\""),
+            b'\\' => output.extend(b"\\\\"),
+            b'\x07' => output.extend(b"\\b"),
+            b'\n' => output.extend(b"\\n"),
+            b'\r' => output.extend(b"\\r"),
+            b'\t' => output.extend(b"\\t"),
+            (0x00..=0x1F) | (0x80..=0xFF) => output.extend([b'\\', b'x', hex_char(ch / 0x10), hex_char(ch % 0x10)]),
+            _ => output.push(*ch),
+        }
+    }
+    output
+}
+
 pub trait Unescape {
     fn unescape_in_place(&self, in_out: &mut [u8]) -> Option<usize>;
 }
@@ -141,6 +177,8 @@ impl Unescape for GenericUnescape {
 //     }
 //     Box::new(Generic::new())
 // }
+
+use crate::{vector_classifier::{self, ClassifierBuilder, Classifier}, sexp_structure};
 
 #[cfg(test)]
 mod unescape_tests {
