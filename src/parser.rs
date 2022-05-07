@@ -107,7 +107,7 @@ impl<VisitorT: Visitor> State<VisitorT> {
         Ok (self.visitor.eof())
     }
 
-    fn process_one(&mut self, input: &[u8], indices_index: usize, indices_len: usize) -> Result<(), Error> {
+    fn process_one(&mut self, input: &mut [u8], indices_index: usize, indices_len: usize) -> Result<(), Error> {
         let indices_buffer = &self.indices_buffer[indices_index..indices_len];
         match input[indices_buffer[0]] {
             b'(' => {
@@ -124,18 +124,10 @@ impl<VisitorT: Visitor> State<VisitorT> {
                 if self.quote_state {
                     use escape::Unescape;
                     let start_index = indices_buffer[0] + 1;
-                    let end_index =
-                        if indices_buffer.len() < 2 {
-                            return Err(Error::UnclosedQuote);
-                        } else {
-                            indices_buffer[1]
-                        };
-                    let mut atom_string = input[start_index..end_index].to_vec();
-                    let atom_string_len =
-                        self.unescape.unescape_in_place(&mut atom_string[..])
+                    let (_input_consumed, atom_string_len) =
+                        self.unescape.unescape_in_place(&mut input[start_index..])
                         .ok_or(Error::InvalidEscape)?;
-                    atom_string.truncate(atom_string_len);
-                    self.visitor.atom(&atom_string[..], self.context_stack.last_mut());
+                    self.visitor.atom(&input[start_index..(start_index + atom_string_len)], self.context_stack.last_mut());
                 }
             },
             _ => {
@@ -152,7 +144,7 @@ impl<VisitorT: Visitor> State<VisitorT> {
         Ok(())
     }
 
-    pub fn process_all(&mut self, input: &[u8]) -> Result<VisitorT::FinalReturnType, Error> {
+    pub fn process_all(&mut self, input: &mut [u8]) -> Result<VisitorT::FinalReturnType, Error> {
         use sexp_structure::Classifier;
 
         let mut input_index = 0;
@@ -178,7 +170,7 @@ impl<VisitorT: Visitor> State<VisitorT> {
             let input_fully_consumed = input_index >= input.len();
 
             for indices_index in 0..(if input_fully_consumed { indices_len } else { indices_len - 1 }) {
-                self.process_one(&input, indices_index, indices_len)?;
+                self.process_one(input, indices_index, indices_len)?;
             }
             if input_fully_consumed {
                 return self.process_eof();

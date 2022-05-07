@@ -35,7 +35,8 @@ pub fn escape(input: &[u8]) -> Vec<u8> {
 }
 
 pub trait Unescape {
-    fn unescape_in_place(&self, in_out: &mut [u8]) -> Option<usize>;
+    /// Consumes all the way up to the next unescaped double quote
+    fn unescape_in_place(&self, in_out: &mut [u8]) -> Option<(usize, usize)>;
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -48,93 +49,99 @@ impl GenericUnescape {
 }
 
 impl Unescape for GenericUnescape {
-    fn unescape_in_place(&self, in_out: &mut [u8]) -> Option<usize> {
+    fn unescape_in_place(&self, in_out: &mut [u8]) -> Option<(usize, usize)> {
         let mut input_index = 0;
         let mut output_index = 0;
         while input_index < in_out.len() {
-            if in_out[input_index] == b'\\' {
-                input_index = input_index + 1;
-                if input_index >= in_out.len() {
-                    return None;
-                }
-                match in_out[input_index] {
-                    ch @ (b'"' | b'\'' | b'\\') => {
-                        in_out[output_index] = ch;
-                        input_index += 1;
-                        output_index += 1;
-                    },
-                    b'b' => {
-                        in_out[output_index] = b'\x07';
-                        input_index += 1;
-                        output_index += 1;
-                    },
-                    b'n' => {
-                        in_out[output_index] = b'\n';
-                        input_index += 1;
-                        output_index += 1;
-                    },
-                    b'r' => {
-                        in_out[output_index] = b'\r';
-                        input_index += 1;
-                        output_index += 1;
-                    },
-                    b't' => {
-                        in_out[output_index] = b'\t';
-                        input_index += 1;
-                        output_index += 1;
-                    },
-                    b'x' => {
-                        if input_index + 3 > in_out.len() {
-                            return None;
-                        }
-                        fn digit_of_char(ch: u8) -> Option<u8> {
-                            match ch {
-                                b'0'..=b'9' => Some(ch - b'0'),
-                                b'a'..=b'f' => Some(ch - b'a' + 10),
-                                b'A'..=b'F' => Some(ch - b'A' + 10),
-                                _ => None,
-                            }
-                        }
-                        in_out[output_index] =
-                            match (digit_of_char(in_out[input_index + 1]), digit_of_char(in_out[input_index + 2])) {
-                                (Some(d1), Some(d2)) => Some(d1 * 16 + d2),
-                                _ => None
-                            }?;
-                        input_index += 3;
-                        output_index += 1;
-                    },
-                    b'0'..=b'9' => {
-                        if input_index + 3 > in_out.len() {
-                            return None;
-                        }
-                        fn digit_of_char(ch: u8) -> Option<usize> {
-                            match ch {
-                                b'0'..=b'9' => Some((ch - b'0') as usize),
-                                _ => None,
-                            }
-                        }
-                        in_out[output_index] =
-                            match (digit_of_char(in_out[input_index + 0]),
-                                   digit_of_char(in_out[input_index + 1]),
-                                   digit_of_char(in_out[input_index + 2])) {
-                                (Some(d1), Some(d2), Some(d3)) => (d1 * 100 + d2 * 10 + d3).try_into().ok(),
-                                _ => None
-                            }?;
-                        input_index += 3;
-                        output_index += 1;
-                    },
-                    _ => {
-                        in_out[output_index] = b'\\';
-                        output_index += 1;
+            match in_out[input_index] {
+                b'\\' => {
+                    input_index = input_index + 1;
+                    if input_index >= in_out.len() {
+                        return None;
                     }
-                }
-            } else {
-                in_out[output_index] = in_out[input_index];
-                input_index += 1;
-                output_index += 1;
+                    match in_out[input_index] {
+                        ch @ (b'"' | b'\'' | b'\\') => {
+                            in_out[output_index] = ch;
+                            input_index += 1;
+                            output_index += 1;
+                        },
+                        b'b' => {
+                            in_out[output_index] = b'\x07';
+                            input_index += 1;
+                            output_index += 1;
+                        },
+                        b'n' => {
+                            in_out[output_index] = b'\n';
+                            input_index += 1;
+                            output_index += 1;
+                        },
+                        b'r' => {
+                            in_out[output_index] = b'\r';
+                            input_index += 1;
+                            output_index += 1;
+                        },
+                        b't' => {
+                            in_out[output_index] = b'\t';
+                            input_index += 1;
+                            output_index += 1;
+                        },
+                        b'x' => {
+                            if input_index + 3 > in_out.len() {
+                                return None;
+                            }
+                            fn digit_of_char(ch: u8) -> Option<u8> {
+                                match ch {
+                                    b'0'..=b'9' => Some(ch - b'0'),
+                                    b'a'..=b'f' => Some(ch - b'a' + 10),
+                                    b'A'..=b'F' => Some(ch - b'A' + 10),
+                                    _ => None,
+                                }
+                            }
+                            in_out[output_index] =
+                                match (digit_of_char(in_out[input_index + 1]), digit_of_char(in_out[input_index + 2])) {
+                                    (Some(d1), Some(d2)) => Some(d1 * 16 + d2),
+                                    _ => None
+                                }?;
+                            input_index += 3;
+                            output_index += 1;
+                        },
+                        b'0'..=b'9' => {
+                            if input_index + 3 > in_out.len() {
+                                return None;
+                            }
+                            fn digit_of_char(ch: u8) -> Option<usize> {
+                                match ch {
+                                    b'0'..=b'9' => Some((ch - b'0') as usize),
+                                    _ => None,
+                                }
+                            }
+                            in_out[output_index] =
+                                match (digit_of_char(in_out[input_index + 0]),
+                                       digit_of_char(in_out[input_index + 1]),
+                                       digit_of_char(in_out[input_index + 2])) {
+                                    (Some(d1), Some(d2), Some(d3)) => (d1 * 100 + d2 * 10 + d3).try_into().ok(),
+                                    _ => None
+                                }?;
+                            input_index += 3;
+                            output_index += 1;
+                        },
+                        _ => {
+                            in_out[output_index] = b'\\';
+                            output_index += 1;
+                        }
+                    }
+                },
+                b'"' => {
+                    return Some((input_index, output_index));
+                },
+                _ => {
+                    in_out[output_index] = in_out[input_index];
+                    input_index += 1;
+                    output_index += 1;
+                },
             }
         }
-        Some(output_index)
+        None
     }
 }
 
@@ -191,9 +198,10 @@ mod unescape_tests {
     impl<T: Unescape> Testable for T {
         fn run_test(&self, input: &[u8], output: Option<&[u8]>) {
             let mut actual_output_scratch = input.to_vec();
+            actual_output_scratch.push(b'\"');
             let actual_output =
                 match self.unescape_in_place(&mut actual_output_scratch[..]) {
-                    Some(actual_output_count) => Some(&actual_output_scratch[0..actual_output_count]),
+                    Some((_, actual_output_count)) => Some(&actual_output_scratch[0..actual_output_count]),
                     None => None
                 };
             if output != actual_output {

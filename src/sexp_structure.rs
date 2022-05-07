@@ -55,7 +55,7 @@ impl Generic {
             self.escape = escape;
             self.atom_like = atom_like;
             self.quote_state = self.quote_state ^ quote_state_change;
-            if quote_state_change || (!self.quote_state && atom_like_state_change) || paren {
+            if (self.quote_state && quote_state_change) || (!self.quote_state && atom_like_state_change) || paren {
                 result = result | (1u64 << i);
             }
         }
@@ -191,7 +191,7 @@ impl Avx2 {
         self.quote_state = quote_state;
         let quoted_areas = self.clmul.clmul(quote_transitions) ^ (if prev_quote_state { !0u64 } else { 0u64 });
 
-        let special = quote_transitions | (!quoted_areas & (bm_parens | ranges::range_transitions(bm_atom_like, self.atom_like)));
+        let special = (quote_transitions & quoted_areas) | (!quoted_areas & (bm_parens | ranges::range_transitions(bm_atom_like, self.atom_like)));
 
         self.atom_like = bm_atom_like >> 63 != 0;
 

@@ -11,22 +11,26 @@ fn bench_parser(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(input_pp.len() as u64));
         group.bench_function("rust-sexp",
                              |b| b.iter(|| {
-                                 let mut parser = parser::State::new(parser::SimpleVisitor::new(rust_parser::RustSexpFactory::new()));
-                                 let result = parser.process_all(input_pp).unwrap();
+                                 let mut input_pp = input_pp.to_vec();
+                                 let mut parser = parser::State::new(parser::SimpleVisitor::new(rust_parser::SexpFactory::new()));
+                                 let result = parser.process_all(&mut input_pp[..]).unwrap();
                                  black_box(result)
                              }));
         group.bench_function("rust-tape",
                              |b| b.iter(|| {
+                                 let mut input_pp = input_pp.to_vec();
                                  let mut parser = parser::State::new(rust_parser::TapeVisitor::new());
-                                 let result = parser.process_all(input_pp).unwrap();
+                                 let result = parser.process_all(&mut input_pp[..]).unwrap();
                                  black_box(result)
                              }));
         group.bench_function("rust-two-phase-tape",
                              |b| b.iter(|| {
+                                 let mut input_pp1 = input_pp.to_vec();
                                  let mut phase1 = parser::State::new(rust_parser::two_phase::Phase1Visitor::new());
-                                 let phase1_result = phase1.process_all(input_pp).unwrap();
+                                 let phase1_result = phase1.process_all(&mut input_pp1[..]).unwrap();
+                                 input_pp1.copy_from_slice(input_pp);
                                  let mut phase2 = parser::State::new(rust_parser::two_phase::Phase2Visitor::new(phase1_result));
-                                 let result = phase2.process_all(input_pp).unwrap();
+                                 let result = phase2.process_all(&mut input_pp1[..]).unwrap();
                                  black_box(result)
                              }));
         group.finish();
@@ -40,22 +44,26 @@ fn bench_parser(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(input_mach.len() as u64));
         group.bench_function("rust-sexp",
                              |b| b.iter(|| {
-                                 let mut parser = parser::State::new(parser::SimpleVisitor::new(rust_parser::RustSexpFactory::new()));
-                                 let result = parser.process_all(input_mach).unwrap();
+                                 let mut input_mach = input_mach.to_vec();
+                                 let mut parser = parser::State::new(parser::SimpleVisitor::new(rust_parser::SexpFactory::new()));
+                                 let result = parser.process_all(&mut input_mach[..]).unwrap();
                                  black_box(result)
                              }));
         group.bench_function("rust-tape",
                              |b| b.iter(|| {
+                                 let mut input_mach = input_mach.to_vec();
                                  let mut parser = parser::State::new(rust_parser::TapeVisitor::new());
-                                 let result = parser.process_all(input_mach).unwrap();
+                                 let result = parser.process_all(&mut input_mach[..]).unwrap();
                                  black_box(result)
                              }));
         group.bench_function("rust-two-phase-tape",
                              |b| b.iter(|| {
+                                 let mut input_mach1 = input_mach.to_vec();
                                  let mut phase1 = parser::State::new(rust_parser::two_phase::Phase1Visitor::new());
-                                 let phase1_result = phase1.process_all(input_mach).unwrap();
+                                 let phase1_result = phase1.process_all(&mut input_mach1[..]).unwrap();
+                                 input_mach1.copy_from_slice(input_mach);
                                  let mut phase2 = parser::State::new(rust_parser::two_phase::Phase2Visitor::new(phase1_result));
-                                 let result = phase2.process_all(input_mach).unwrap();
+                                 let result = phase2.process_all(&mut input_mach1[..]).unwrap();
                                  black_box(result)
                              }));
         group.finish();

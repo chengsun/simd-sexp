@@ -352,27 +352,31 @@ mod parser_tests {
         };
 
         {
+            let mut input = input.to_vec();
             let mut parser = parser::State::new(parser::SimpleVisitor::new(SexpFactory::new()));
-            let sexp_or_error = parser.process_all(input);
+            let sexp_or_error = parser.process_all(&mut input[..]);
             let output = sexp_or_error.map(|sexps| SexpMulti(sexps).to_string());
             validate("SimpleVisitor<SexpFactory>", output);
         }
 
         {
+            let mut input = input.to_vec();
             let mut parser = parser::State::new(TapeVisitor::new());
-            let sexp_or_error = parser.process_all(input);
+            let sexp_or_error = parser.process_all(&mut input[..]);
             let output = sexp_or_error.map(|tape| tape.to_string());
             validate("TapeVisitor", output);
         }
 
         {
+            let mut input1 = input.to_vec();
             let mut phase1 = parser::State::new(two_phase::Phase1Visitor::new());
-            let phase1_result = phase1.process_all(input);
+            let phase1_result = phase1.process_all(&mut input1[..]);
+            input1.copy_from_slice(input);
             let tape_or_error = match phase1_result {
                 Err(e) => Err(e),
                 Ok(phase1_result) => {
                     let mut phase2 = parser::State::new(two_phase::Phase2Visitor::new(phase1_result));
-                    phase2.process_all(input)
+                    phase2.process_all(&mut input1[..])
                 },
             };
             let output = tape_or_error.map(|tape| tape.to_string());
