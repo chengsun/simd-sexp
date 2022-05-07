@@ -8,7 +8,7 @@ pub trait Visitor {
     type FinalReturnType;
     fn atom(&mut self, atom: &[u8], parent_context: Option<&mut Self::Context>) -> Self::IntermediateReturnType;
     fn list_open(&mut self, parent_context: Option<&mut Self::Context>) -> Self::Context;
-    fn list_close(&mut self, context: Self::Context) -> Self::IntermediateReturnType;
+    fn list_close(&mut self, context: Self::Context, parent_context: Option<&mut Self::Context>) -> Self::IntermediateReturnType;
     fn eof(&mut self) -> Self::FinalReturnType;
 }
 
@@ -42,7 +42,7 @@ impl<SexpFactoryT: SexpFactory> Visitor for SimpleVisitor<SexpFactoryT> {
     fn list_open(&mut self, _: Option<&mut Self::Context>) -> Self::Context {
         self.sexp_stack.len()
     }
-    fn list_close(&mut self, context: Self::Context) -> Self::IntermediateReturnType {
+    fn list_close(&mut self, context: Self::Context, _: Option<&mut Self::Context>) -> Self::IntermediateReturnType {
         let open_index = context;
         let inner = self.sexp_stack.split_off(open_index);
         let sexp = self.sexp_factory.list(inner);
@@ -116,7 +116,7 @@ impl<VisitorT: Visitor> State<VisitorT> {
             },
             b')' => {
                 let context = self.context_stack.pop().ok_or(Error::UnmatchedCloseParen)?;
-                self.visitor.list_close(context);
+                self.visitor.list_close(context, self.context_stack.last_mut());
             },
             b' ' | b'\t' | b'\n' => (),
             b'"' => {

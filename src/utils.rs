@@ -122,3 +122,17 @@ pub fn unlikely(b: bool) -> bool {
     if b { cold(); }
     b
 }
+
+#[inline]
+pub fn read_u32(buf: &[u8]) -> u32 {
+    u32::from_le_bytes(buf[..4].try_into().unwrap())
+}
+
+#[inline]
+pub fn write_u32(buf: &mut [u8], n: u32) {
+    assert!(buf.len() >= 4);
+    unsafe {
+        let bytes = *(&n.to_le() as *const _ as *const [u8; 4]);
+        std::ptr::copy_nonoverlapping((&bytes).as_ptr(), buf.as_mut_ptr(), 4);
+    }
+}

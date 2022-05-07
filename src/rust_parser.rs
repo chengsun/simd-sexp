@@ -1,4 +1,4 @@
-use crate::{parser, varint, escape};
+use crate::{escape, parser, utils};
 
 pub enum RustSexp {
     Atom(Vec<u8>),
@@ -74,20 +74,18 @@ impl parser::SexpFactory for RustSexpFactory {
 }
 
 /**
-Atom: <len*2 as u64>string
-List: <len*2+1 as u64>Repr(X1)Repr(X2)...
+Atom: <len*2 as u32>string
+List: <len*2+1 as u32>Repr(X1)Repr(X2)...
 */
 
 pub struct TapeVisitor {
     tape: Vec<u8>,
-    varint_encoder: varint::GenericEncoder,
 }
 
 impl TapeVisitor {
     pub fn new() -> TapeVisitor {
         Self {
             tape: Vec::new(),
-            varint_encoder: varint::GenericEncoder::new(),
         }
     }
 }
@@ -101,10 +99,8 @@ impl parser::Visitor for TapeVisitor {
     type IntermediateReturnType = ();
     type FinalReturnType = Vec<u8>;
     fn atom(&mut self, atom: &[u8], _: Option<&mut TapeVisitorContext>) {
-        // TODO: lol
         let tape_start_index = self.tape.len();
-        self.tape.extend([0u8; 4]);
-        self.varint_encoder.encode_one(atom.len() * 2, &mut self.tape[tape_start_index..]).unwrap();
+        utils::write_u32(&mut self.tape[tape_start_index..], (atom.len() * 2).try_into().unwrap());
         self.tape.extend_from_slice(atom);
     }
     fn list_open(&mut self, _: Option<&mut TapeVisitorContext>) -> TapeVisitorContext {
@@ -114,11 +110,130 @@ impl parser::Visitor for TapeVisitor {
             tape_start_index,
         }
     }
-    fn list_close(&mut self, context: TapeVisitorContext) {
-        self.varint_encoder.encode_one((self.tape.len() - context.tape_start_index) * 2 + 1, &mut self.tape[context.tape_start_index..]);
+    fn list_close(&mut self, context: TapeVisitorContext, _: Option<&mut TapeVisitorContext>) {
+        let x: u32 = ((self.tape.len() - context.tape_start_index) * 2 + 1).try_into().unwrap();
+        utils::write_u32(&mut self.tape[context.tape_start_index..], x);
     }
     fn eof(&mut self) -> Self::FinalReturnType {
         std::mem::take(&mut self.tape)
+    }
+}
+
+mod two_phase {
+    use crate::{parser, varint};
+
+    /**
+    Atom: <len*2>string
+    List: <len*2+1>Repr(X1)Repr(X2)...
+    */
+
+    pub struct Phase1 {
+        varint_encoder: varint::GenericEncoder,
+        varint_length_tape: Vec<u8>,
+        size: usize,
+    }
+
+    impl Phase1 {
+        pub fn new() -> Self {
+            Self {
+                varint_encoder: varint::GenericEncoder::new(),
+                varint_length_tape: Vec::new(),
+                size: 0,
+            }
+        }
+    }
+
+    pub struct Phase1Context {
+        size: usize,
+        varint_length_tape_index: usize,
+    }
+
+    impl parser::Visitor for Phase1 {
+        type Context = Phase1Context;
+        type IntermediateReturnType = ();
+        type FinalReturnType = (usize, Vec<u8>);
+        fn atom(&mut self, atom: &[u8], mut parent_context: Option<&mut Phase1Context>) {
+            let varint_length = self.varint_encoder.encode_length(atom.len());
+            let this_size = varint_length + atom.len();
+            match parent_context {
+                Some (ref mut parent_context) => { parent_context.size += this_size; },
+                None => { self.size += this_size; },
+            }
+        }
+        fn list_open(&mut self, _: Option<&mut Phase1Context>) -> Phase1Context {
+            let varint_length_tape_index = self.varint_length_tape.len();
+            self.varint_length_tape.push(0);
+            Phase1Context {
+                size: 0,
+                varint_length_tape_index,
+            }
+        }
+        fn list_close(&mut self, context: Phase1Context, mut parent_context: Option<&mut Phase1Context>) {
+            let varint_length = self.varint_encoder.encode_length(2 * context.size + 1);
+            self.varint_length_tape[context.varint_length_tape_index] = varint_length as u8;
+            let this_size = varint_length + context.size;
+            match parent_context {
+                Some (ref mut parent_context) => { parent_context.size += this_size; },
+                None => { self.size += this_size; },
+            }
+        }
+        fn eof(&mut self) -> Self::FinalReturnType {
+            (self.size, std::mem::take(&mut self.varint_length_tape))
+        }
+    }
+
+    pub struct Phase2Visitor {
+        tape: Vec<u8>,
+        tape_index: usize,
+        varint_length_tape: Vec<u8>,
+        varint_length_tape_index: usize,
+        varint_encoder: varint::GenericEncoder,
+    }
+
+    impl Phase2Visitor {
+        pub fn new(phase1_result: <Phase1 as parser::Visitor>::FinalReturnType) -> Phase2Visitor {
+            let (size, varint_length_tape) = phase1_result;
+            Self {
+                tape: vec![0u8; size],
+                tape_index: 0usize,
+                varint_length_tape,
+                varint_length_tape_index: 0usize,
+                varint_encoder: varint::GenericEncoder::new(),
+            }
+        }
+    }
+
+    pub struct Phase2Context {
+        tape_start_index: usize,
+    }
+
+    impl parser::Visitor for Phase2Visitor {
+        type Context = Phase2Context;
+        type IntermediateReturnType = ();
+        type FinalReturnType = Vec<u8>;
+        fn atom(&mut self, atom: &[u8], _: Option<&mut Phase2Context>) {
+            let varint_len = self.varint_encoder.encode_one(atom.len() * 2, &mut self.tape[self.tape_index..]).unwrap();
+            self.tape_index += varint_len;
+            for &a in atom {
+                self.tape[self.tape_index] = a;
+                self.tape_index += 1;
+            }
+        }
+        fn list_open(&mut self, _: Option<&mut Phase2Context>) -> Phase2Context {
+            let varint_length = self.varint_length_tape[self.varint_length_tape_index];
+            self.varint_length_tape_index += 1;
+            let tape_start_index = self.tape_index;
+            self.tape_index += varint_length as usize;
+            Phase2Context {
+                tape_start_index,
+            }
+        }
+        fn list_close(&mut self, context: Phase2Context, _: Option<&mut Phase2Context>) {
+            self.varint_encoder.encode_one((self.tape_index - context.tape_start_index) * 2 + 1, &mut self.tape[context.tape_start_index..]);
+        }
+        fn eof(&mut self) -> Self::FinalReturnType {
+            std::mem::take(&mut self.tape)
+        }
     }
 }
 

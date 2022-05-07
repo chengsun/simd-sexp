@@ -102,6 +102,16 @@ impl GenericEncoder {
             output.last_mut()
         });
     }
+
+    pub fn encode_length(&self, input: usize) -> usize {
+        let mut o = 0;
+        let mut scratch = 0u8;
+        self.encode_one_generic(input, &mut scratch, |scratch_mut_ref| {
+            o += 1;
+            Some(scratch_mut_ref)
+        });
+        o
+    }
 }
 
 impl Encoder<usize> for GenericEncoder {
