@@ -62,7 +62,6 @@ pub struct State<VisitorT: Visitor> {
     unescape: escape::GenericUnescape,
     context_stack: Vec<VisitorT::Context>,
     indices_buffer: [usize; INDICES_BUFFER_MAX_LEN],
-    quote_state: bool,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -96,7 +95,6 @@ impl<VisitorT: Visitor> State<VisitorT> {
             unescape,
             context_stack: Vec::new(),
             indices_buffer: [0; INDICES_BUFFER_MAX_LEN],
-            quote_state: false,
         }
     }
 
@@ -120,15 +118,12 @@ impl<VisitorT: Visitor> State<VisitorT> {
             },
             b' ' | b'\t' | b'\n' => (),
             b'"' => {
-                self.quote_state = !self.quote_state;
-                if self.quote_state {
-                    use escape::Unescape;
-                    let start_index = indices_buffer[0] + 1;
-                    let (_input_consumed, atom_string_len) =
-                        self.unescape.unescape_in_place(&mut input[start_index..])
-                        .ok_or(Error::InvalidEscape)?;
-                    self.visitor.atom(&input[start_index..(start_index + atom_string_len)], self.context_stack.last_mut());
-                }
+                use escape::Unescape;
+                let start_index = indices_buffer[0] + 1;
+                let (_input_consumed, atom_string_len) =
+                    self.unescape.unescape_in_place(&mut input[start_index..])
+                    .ok_or(Error::InvalidEscape)?;
+                self.visitor.atom(&input[start_index..(start_index + atom_string_len)], self.context_stack.last_mut());
             },
             _ => {
                 let start_index = indices_buffer[0];
