@@ -116,7 +116,6 @@ impl<VisitorT: Visitor> State<VisitorT> {
                 let context = self.context_stack.pop().ok_or(Error::UnmatchedCloseParen)?;
                 self.visitor.list_close(context, self.context_stack.last_mut());
             },
-            b' ' | b'\t' | b'\n' => (),
             b'"' => {
                 use escape::Unescape;
                 let start_index = indices_buffer[0] + 1;
@@ -125,15 +124,17 @@ impl<VisitorT: Visitor> State<VisitorT> {
                     .ok_or(Error::InvalidEscape)?;
                 self.visitor.atom(&input[start_index..(start_index + atom_string_len)], self.context_stack.last_mut());
             },
-            _ => {
-                let start_index = indices_buffer[0];
-                let end_index =
-                    if unlikely(indices_buffer.len() < 2) {
-                        input.len()
-                    } else {
-                        indices_buffer[1]
-                    };
-                self.visitor.atom(&input[start_index..end_index], self.context_stack.last_mut());
+            ch => {
+                if ch != b' ' && ch != b'\t' && ch != b'\n' {
+                    let start_index = indices_buffer[0];
+                    let end_index =
+                        if unlikely(indices_buffer.len() < 2) {
+                            input.len()
+                        } else {
+                            indices_buffer[1]
+                        };
+                    self.visitor.atom(&input[start_index..end_index], self.context_stack.last_mut());
+                }
             }
         }
         Ok(())
