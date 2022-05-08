@@ -45,23 +45,58 @@ fn main() {
 
     let event_frame = ittapi::Event::new("frame");
 
-    println!("Warmup");
+    match std::env::args().nth(1).as_deref() {
+        Some("tape") => {
+            println!("Warmup");
 
-    for _i in 0..10000 {
-        let mut input_pp_v = input_pp.to_vec();
-        let mut parser = parser::State::new(rust_parser::TapeVisitor::new());
-        let result = parser.process_all(&mut input_pp_v[..]);
-        criterion::black_box(result.unwrap());
+            for _i in 0..10000 {
+                let mut input_pp_v = input_pp.to_vec();
+                let mut parser = parser::State::new(rust_parser::TapeVisitor::new());
+                let result = parser.process_all(&mut input_pp_v[..]);
+                criterion::black_box(result.unwrap());
+            }
+
+            println!("Profiling");
+
+            for _i in 0..10000 {
+                let e = event_frame.start();
+                let mut input_pp_v = input_pp.to_vec();
+                let mut parser = parser::State::new(rust_parser::TapeVisitor::new());
+                let result = parser.process_all(&mut input_pp_v[..]);
+                criterion::black_box(result.unwrap());
+                std::mem::drop(e);
+            }
+        },
+
+        Some("two_phase") => {
+            println!("Warmup");
+
+            for _i in 0..10000 {
+                let mut input_pp_v = input_pp.to_vec();
+                let mut parser = parser::State::new(rust_parser::two_phase::Phase1Visitor::new());
+                let result = parser.process_all(&mut input_pp_v[..]).unwrap();
+                input_pp_v.copy_from_slice(input_pp);
+                let mut parser = parser::State::new(rust_parser::two_phase::Phase2Visitor::new(result));
+                let result = parser.process_all(&mut input_pp_v[..]).unwrap();
+                criterion::black_box(result);
+            }
+
+            println!("Profiling");
+
+            for _i in 0..10000 {
+                let e = event_frame.start();
+                let mut input_pp_v = input_pp.to_vec();
+                let mut parser = parser::State::new(rust_parser::two_phase::Phase1Visitor::new());
+                let result = parser.process_all(&mut input_pp_v[..]).unwrap();
+                input_pp_v.copy_from_slice(input_pp);
+                let mut parser = parser::State::new(rust_parser::two_phase::Phase2Visitor::new(result));
+                let result = parser.process_all(&mut input_pp_v[..]).unwrap();
+                criterion::black_box(result);
+                std::mem::drop(e);
+            }
+        },
+
+        _ => (),
     }
 
-    println!("Profiling");
-
-    for _i in 0..10000 {
-        let e = event_frame.start();
-        let mut input_pp_v = input_pp.to_vec();
-        let mut parser = parser::State::new(rust_parser::TapeVisitor::new());
-        let result = parser.process_all(&mut input_pp_v[..]);
-        criterion::black_box(result.unwrap());
-        std::mem::drop(e);
-    }
 }
