@@ -110,6 +110,12 @@ fn main() {
         arg => {
             println!("Not profiling. In order to profile, pass \"tape\" or \"two_phase\" as an argument.");
             println!("You passed: {:?}", arg);
+            unsafe {
+                println!("something: {:?}", start_stop_transitions::stg_asdf(
+                    utils::bitrev64(0b0010100),
+                    utils::bitrev64(0b0100000),
+                    utils::bitrev64(0b0001000)));
+            }
         },
     }
 
