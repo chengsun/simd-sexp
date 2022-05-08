@@ -53,7 +53,7 @@ impl<SexpFactoryT: SexpFactory> Visitor for SimpleVisitor<SexpFactoryT> {
     }
 }
 
-
+/// Must be >= 64. Doesn't affect correctness or impose limitations on sexp being parsed.
 const INDICES_BUFFER_MAX_LEN: usize = 512;
 
 pub struct State<VisitorT: Visitor> {

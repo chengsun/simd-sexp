@@ -96,7 +96,10 @@ fn main() {
             }
         },
 
-        _ => (),
+        arg => {
+            println!("Not profiling. In order to profile, pass \"tape\" or \"two_phase\" as an argument.");
+            println!("You passed: {:?}", arg);
+        },
     }
 
 }
