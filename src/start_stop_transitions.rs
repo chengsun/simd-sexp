@@ -121,6 +121,16 @@ pub fn naive_stg_asdf(a: u64, bplus: u64, bminus: u64, verbose: bool) -> u64 {
     result
 }
 
+fn end_of_selected_region(region: u64, selector: u64) -> u64 {
+    region & !(region.wrapping_sub(selector))
+}
+
+#[test]
+fn end_of_selected_region_test_1() {
+    use crate::utils::bitrev64;
+    assert_eq!(end_of_selected_region(bitrev64(0b100010001), bitrev64(0b001000000)), bitrev64(0b000010000));
+}
+
 #[inline(never)]
 #[target_feature(enable = "bmi2,sse2,pclmulqdq")]
 pub unsafe fn stg_asdf(a: u64, bplus: u64, bminus: u64, verbose: bool) -> u64 {
@@ -151,8 +161,8 @@ pub unsafe fn stg_asdf(a: u64, bplus: u64, bminus: u64, verbose: bool) -> u64 {
     let l_assume_aminus = l_a_assume_aminus | l_b_assume_aminus;
     let m_assume_aplus = range_transitions(l_assume_aplus, false);
     let m_assume_aminus = range_transitions(l_assume_aminus, false);
-    let switch_assume_aplus = aplus_assume_aplus & !m_assume_aplus;
-    let switch_assume_aminus = aplus_assume_aminus & !m_assume_aminus;
+    let switch_assume_aplus = end_of_selected_region(m_assume_aplus, aplus_assume_aplus & !m_assume_aplus) << 1;
+    let switch_assume_aminus = end_of_selected_region(m_assume_aminus, aplus_assume_aminus & !m_assume_aminus) << 1;
     let (taplus_is_what_to_assume, _) = start_stop_transitions.start_stop_transitions(switch_assume_aminus, switch_assume_aplus, true);
     let aplus_is_what_to_assume = clmul.clmul(taplus_is_what_to_assume) ^ !0;
     let result = (m_assume_aplus & aplus_is_what_to_assume) | (m_assume_aminus & !aplus_is_what_to_assume);
@@ -536,9 +546,13 @@ mod start_stop_transitions_tests {
         a:      bitrev64(0b111101),
         bplus:  bitrev64(0b000010),
         bminus: bitrev64(0b000000) }) }
+    #[test] fn stg_test_4() { run_stg_test(StgTestcase{
+        a:      bitrev64(0b111010),
+        bplus:  bitrev64(0b000101),
+        bminus: bitrev64(0b000000) }) }
 
     // quickcheck::quickcheck! {
-    //     fn test_stg(testcase: StgTestcase) {
+    //     fn test_stg(testcase: StgTestcase) -> () {
     //         run_stg_test(testcase)
     //     }
     // }
