@@ -13,18 +13,26 @@ pub enum SelectVisitorContext {
 }
 
 impl parser::Visitor for SelectVisitor {
+    type IntermediateAtom = Vec<u8>;
     type Context = SelectVisitorContext;
     type FinalReturnType = ();
-    fn atom(&mut self, atom: &[u8], parent_context: Option<&mut Self::Context>) {
+    fn atom_reserve(&mut self, length_upper_bound: usize) -> Self::IntermediateAtom {
+        (0..length_upper_bound).map(|_| 0u8).collect()
+    }
+    fn atom_borrow<'a, 'b : 'a>(&'b mut self, atom: &'a mut Self::IntermediateAtom) -> &'a mut [u8] {
+        &mut atom[..]
+    }
+    fn atom(&mut self, mut atom: Self::IntermediateAtom, length: usize, parent_context: Option<&mut Self::Context>) {
+        atom.truncate(length);
         match parent_context {
             None => (),
             Some(parent_context) => {
                 *parent_context = match parent_context {
                     SelectVisitorContext::Start =>
-                        if self.select.contains(atom) { SelectVisitorContext::SelectNext(atom.to_owned()) } else { SelectVisitorContext::Ignore },
+                        if self.select.contains(&atom) { SelectVisitorContext::SelectNext(atom.to_owned()) } else { SelectVisitorContext::Ignore },
                     SelectVisitorContext::SelectNext(key) => {
                         let key = std::mem::take(key);
-                        SelectVisitorContext::Selected(key, atom.to_owned())
+                        SelectVisitorContext::Selected(key, atom)
                     },
                     SelectVisitorContext::Selected(_, _) => SelectVisitorContext::Ignore,
                     SelectVisitorContext::Ignore => SelectVisitorContext::Ignore,

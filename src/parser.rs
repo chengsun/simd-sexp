@@ -3,9 +3,12 @@ use crate::utils::*;
 
 
 pub trait Visitor {
+    type IntermediateAtom;
     type Context;
     type FinalReturnType;
-    fn atom(&mut self, atom: &[u8], parent_context: Option<&mut Self::Context>);
+    fn atom_reserve(&mut self, length_upper_bound: usize) -> Self::IntermediateAtom;
+    fn atom_borrow<'a, 'b : 'a>(&'b mut self, atom: &'a mut Self::IntermediateAtom) -> &'a mut [u8];
+    fn atom(&mut self, atom: Self::IntermediateAtom, length: usize, parent_context: Option<&mut Self::Context>);
     fn list_open(&mut self, parent_context: Option<&mut Self::Context>) -> Self::Context;
     fn list_close(&mut self, context: Self::Context, parent_context: Option<&mut Self::Context>);
     fn eof(&mut self) -> Self::FinalReturnType;
@@ -13,7 +16,7 @@ pub trait Visitor {
 
 pub trait SexpFactory {
     type Sexp;
-    fn atom(&self, a: &[u8]) -> Self::Sexp;
+    fn atom(&self, a: Vec<u8>) -> Self::Sexp;
     fn list(&self, xs: Vec<Self::Sexp>) -> Self::Sexp;
 }
 
@@ -32,9 +35,17 @@ impl<SexpFactoryT: SexpFactory> SimpleVisitor<SexpFactoryT> {
 }
 
 impl<SexpFactoryT: SexpFactory> Visitor for SimpleVisitor<SexpFactoryT> {
+    type IntermediateAtom = Vec<u8>;
     type Context = usize;
     type FinalReturnType = Vec<SexpFactoryT::Sexp>;
-    fn atom(&mut self, atom: &[u8], _: Option<&mut Self::Context>) {
+    fn atom_reserve(&mut self, length_upper_bound: usize) -> Self::IntermediateAtom {
+        (0..length_upper_bound).map(|_| 0u8).collect()
+    }
+    fn atom_borrow<'a, 'b : 'a>(&'b mut self, atom: &'a mut Self::IntermediateAtom) -> &'a mut [u8] {
+        &mut atom[..]
+    }
+    fn atom(&mut self, mut atom: Self::IntermediateAtom, length: usize, _: Option<&mut Self::Context>) {
+        atom.truncate(length);
         self.sexp_stack.push(self.sexp_factory.atom(atom));
     }
     fn list_open(&mut self, _: Option<&mut Self::Context>) -> Self::Context {
@@ -103,7 +114,7 @@ impl<VisitorT: Visitor> State<VisitorT> {
         Ok (self.visitor.eof())
     }
 
-    fn process_one(&mut self, input: &mut [u8], indices_index: usize, indices_len: usize) -> Result<(), Error> {
+    fn process_one(&mut self, input: &[u8], indices_index: usize, indices_len: usize) -> Result<(), Error> {
         let indices_buffer = &self.indices_buffer[indices_index..indices_len];
         match input[indices_buffer[0]] {
             b'(' => {
@@ -117,10 +128,18 @@ impl<VisitorT: Visitor> State<VisitorT> {
             b'"' => {
                 use escape::Unescape;
                 let start_index = indices_buffer[0] + 1;
+                let end_index =
+                    if unlikely(indices_buffer.len() < 2) {
+                        input.len()
+                    } else {
+                        indices_buffer[1] - 1
+                    };
+                let length_upper_bound = end_index - start_index;
+                let mut atom = self.visitor.atom_reserve(length_upper_bound);
                 let (_input_consumed, atom_string_len) =
-                    self.unescape.unescape_in_place(&mut input[start_index..])
+                    self.unescape.unescape(&input[start_index..], self.visitor.atom_borrow(&mut atom))
                     .ok_or(Error::InvalidEscape)?;
-                self.visitor.atom(&input[start_index..(start_index + atom_string_len)], self.context_stack.last_mut());
+                self.visitor.atom(atom, atom_string_len, self.context_stack.last_mut());
             },
             ch => {
                 if ch != b' ' && ch != b'\t' && ch != b'\n' {
@@ -131,14 +150,20 @@ impl<VisitorT: Visitor> State<VisitorT> {
                         } else {
                             indices_buffer[1]
                         };
-                    self.visitor.atom(&input[start_index..end_index], self.context_stack.last_mut());
+                    let length = end_index - start_index;
+                    let mut atom = self.visitor.atom_reserve(length);
+                    {
+                        let output = self.visitor.atom_borrow(&mut atom);
+                        unsafe { std::ptr::copy_nonoverlapping(&input[start_index] as *const u8, &mut output[0] as *mut u8, length) };
+                    }
+                    self.visitor.atom(atom, length, self.context_stack.last_mut());
                 }
             }
         }
         Ok(())
     }
 
-    pub fn process_all(&mut self, input: &mut [u8]) -> Result<VisitorT::FinalReturnType, Error> {
+    pub fn process_all(&mut self, input: &[u8]) -> Result<VisitorT::FinalReturnType, Error> {
         use structural::Classifier;
 
         let mut input_index = 0;

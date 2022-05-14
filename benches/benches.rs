@@ -23,16 +23,6 @@ fn bench_parser(c: &mut Criterion) {
                                  let result = parser.process_all(&mut input_pp[..]).unwrap();
                                  black_box(result)
                              }));
-        group.bench_function("rust-two-phase-tape",
-                             |b| b.iter(|| {
-                                 let mut input_pp1 = input_pp.to_vec();
-                                 let mut phase1 = parser::State::new(rust_parser::two_phase::Phase1Visitor::new());
-                                 let phase1_result = phase1.process_all(&mut input_pp1[..]).unwrap();
-                                 input_pp1.copy_from_slice(input_pp);
-                                 let mut phase2 = parser::State::new(rust_parser::two_phase::Phase2Visitor::new(phase1_result));
-                                 let result = phase2.process_all(&mut input_pp1[..]).unwrap();
-                                 black_box(result)
-                             }));
         group.finish();
     }
 
@@ -54,16 +44,6 @@ fn bench_parser(c: &mut Criterion) {
                                  let mut input_mach = input_mach.to_vec();
                                  let mut parser = parser::State::new(rust_parser::TapeVisitor::new());
                                  let result = parser.process_all(&mut input_mach[..]).unwrap();
-                                 black_box(result)
-                             }));
-        group.bench_function("rust-two-phase-tape",
-                             |b| b.iter(|| {
-                                 let mut input_mach1 = input_mach.to_vec();
-                                 let mut phase1 = parser::State::new(rust_parser::two_phase::Phase1Visitor::new());
-                                 let phase1_result = phase1.process_all(&mut input_mach1[..]).unwrap();
-                                 input_mach1.copy_from_slice(input_mach);
-                                 let mut phase2 = parser::State::new(rust_parser::two_phase::Phase2Visitor::new(phase1_result));
-                                 let result = phase2.process_all(&mut input_mach1[..]).unwrap();
                                  black_box(result)
                              }));
         group.finish();
@@ -101,18 +81,16 @@ fn bench_unescape(c: &mut Criterion) {
     let input_all_backslash_64 = [b'\\'; 64];
     let input_all_misc_64 = [b'x'; 64];
 
+    let mut output_scratch = [0u8; 64];
+
     let generic_unescape = escape::GenericUnescape::new();
 
     let mut group = c.benchmark_group("unescape-64");
     group.throughput(Throughput::Bytes(64));
     group.bench_function("generic-all-backslash",
-                         |b| b.iter_batched(|| input_all_backslash_64.clone(),
-                                            |mut in_out| black_box(generic_unescape.unescape_in_place(&mut in_out[..])),
-                                            BatchSize::SmallInput));
+                         |b| b.iter(|| black_box(generic_unescape.unescape(&input_all_backslash_64[..], &mut output_scratch[..]))));
     group.bench_function("generic-all-misc",
-                         |b| b.iter_batched(|| input_all_misc_64.clone(),
-                                            |mut in_out| black_box(generic_unescape.unescape_in_place(&mut in_out[..])),
-                                            BatchSize::SmallInput));
+                         |b| b.iter(|| black_box(generic_unescape.unescape(&input_all_misc_64[..], &mut output_scratch[..]))));
     group.finish();
 }
 
