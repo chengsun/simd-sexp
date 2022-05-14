@@ -1,5 +1,5 @@
 pub fn escape_is_necessary(input: &[u8]) -> bool {
-    let vector_classifier = vector_classifier::GenericBuilder::new().build(&sexp_structure::not_atom_like_lookup_tables());
+    let vector_classifier = vector_classifier::GenericBuilder::new().build(&structural::not_atom_like_lookup_tables());
     for ch in input {
         let mut ch_copy = [ch.clone()];
         vector_classifier.classify(&mut ch_copy);
@@ -184,7 +184,7 @@ impl Unescape for GenericUnescape {
 //     Box::new(Generic::new())
 // }
 
-use crate::{vector_classifier::{self, ClassifierBuilder, Classifier}, sexp_structure};
+use crate::{vector_classifier::{self, ClassifierBuilder, Classifier}, structural};
 
 #[cfg(test)]
 mod unescape_tests {

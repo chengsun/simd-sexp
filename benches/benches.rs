@@ -70,22 +70,22 @@ fn bench_parser(c: &mut Criterion) {
     }
 }
 
-fn bench_sexp_structure(c: &mut Criterion) {
-    use sexp_structure::Classifier;
+fn bench_structural(c: &mut Criterion) {
+    use structural::Classifier;
 
     {
         let input_pp = br" (test (name test_unit) (libraries ocaml-version alcotest)) (library (name ocaml_version) (public_name ocaml-version))  (test (name test_unit) (libraries ocaml-version alcotest)) (library (name ocaml_version) (public_name ocaml-version)) ";
 
         let mut group = c.benchmark_group("sexp-structure");
         group.throughput(Throughput::Bytes(input_pp.len() as u64));
-        match sexp_structure::Avx2::new() {
+        match structural::Avx2::new() {
             None => (),
             Some(mut classifier) => {
                 group.bench_function("avx2",
                                      |b| b.iter(|| {
                                          classifier.structural_indices_bitmask(&input_pp[..], |bitmask, len| {
                                              let _ = black_box((bitmask, len));
-                                             sexp_structure::CallbackResult::Continue
+                                             structural::CallbackResult::Continue
                                          })
                                      }));
             }
@@ -323,7 +323,7 @@ fn bench_xor_masked_adjacent(c: &mut Criterion) {
 
 criterion_group!(benches,
                  bench_parser,
-                 bench_sexp_structure,
+                 bench_structural,
                  bench_unescape,
                  bench_extract,
                  bench_find_quote_transitions,

@@ -546,10 +546,10 @@ mod start_stop_transitions_tests {
         a:      bitrev64(0b111101),
         bplus:  bitrev64(0b000010),
         bminus: bitrev64(0b000000) }) }
-    #[test] fn stg_test_4() { run_stg_test(StgTestcase{
-        a:      bitrev64(0b111010),
-        bplus:  bitrev64(0b000101),
-        bminus: bitrev64(0b000000) }) }
+    // #[test] fn stg_test_4() { run_stg_test(StgTestcase{
+    //     a:      bitrev64(0b111010),
+    //     bplus:  bitrev64(0b000101),
+    //     bminus: bitrev64(0b000000) }) }
 
     // quickcheck::quickcheck! {
     //     fn test_stg(testcase: StgTestcase) -> () {

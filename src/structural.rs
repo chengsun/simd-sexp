@@ -239,7 +239,7 @@ impl Classifier for Avx2 {
 }
 
 #[cfg(test)]
-mod sexp_structure_tests {
+mod structural_tests {
     use rand::prelude::Distribution;
 
     use super::*;
@@ -272,7 +272,7 @@ mod sexp_structure_tests {
                 print!("actual out: ");
                 print_bool_bitmask(&actual_output[..]);
                 println!("lens: {:?}", lens);
-                panic!("sexp_structure test failed for {}", Self::NAME);
+                panic!("structural test failed for {}", Self::NAME);
             }
         }
     }

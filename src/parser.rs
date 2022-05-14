@@ -1,4 +1,4 @@
-use crate::{escape, extract, sexp_structure};
+use crate::{escape, extract, structural};
 use crate::utils::*;
 
 
@@ -56,7 +56,7 @@ const INDICES_BUFFER_MAX_LEN: usize = 512;
 
 pub struct State<VisitorT: Visitor> {
     visitor: VisitorT,
-    sexp_structure_classifier: sexp_structure::Avx2,
+    structural_classifier: structural::Avx2,
     unescape: escape::GenericUnescape,
     context_stack: Vec<VisitorT::Context>,
     indices_buffer: [usize; INDICES_BUFFER_MAX_LEN],
@@ -83,13 +83,13 @@ impl std::fmt::Display for Error {
 
 impl<VisitorT: Visitor> State<VisitorT> {
     pub fn new(visitor: VisitorT) -> Self {
-        let sexp_structure_classifier = sexp_structure::Avx2::new().unwrap();
+        let structural_classifier = structural::Avx2::new().unwrap();
 
         let unescape = escape::GenericUnescape::new();
 
         State {
             visitor,
-            sexp_structure_classifier,
+            structural_classifier,
             unescape,
             context_stack: Vec::new(),
             indices_buffer: [0; INDICES_BUFFER_MAX_LEN],
@@ -139,13 +139,13 @@ impl<VisitorT: Visitor> State<VisitorT> {
     }
 
     pub fn process_all(&mut self, input: &mut [u8]) -> Result<VisitorT::FinalReturnType, Error> {
-        use sexp_structure::Classifier;
+        use structural::Classifier;
 
         let mut input_index = 0;
         let mut indices_len = 0;
 
         loop {
-            self.sexp_structure_classifier.structural_indices_bitmask(
+            self.structural_classifier.structural_indices_bitmask(
                 &input[input_index..],
                 |bitmask, bitmask_len| {
                     extract::safe_generic(|bit_offset| {
@@ -155,9 +155,9 @@ impl<VisitorT: Visitor> State<VisitorT> {
 
                     input_index += bitmask_len;
                     if indices_len + 64 <= INDICES_BUFFER_MAX_LEN {
-                        sexp_structure::CallbackResult::Continue
+                        structural::CallbackResult::Continue
                     } else {
-                        sexp_structure::CallbackResult::Finish
+                        structural::CallbackResult::Finish
                     }
                 });
 

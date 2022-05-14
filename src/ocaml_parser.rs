@@ -1,16 +1,16 @@
-use crate::{escape, extract, parser, rust_parser, sexp_structure};
+use crate::{escape, extract, parser, rust_parser, structural};
 
 use ocaml::IntoValue;
 
 // Needs to be in a Box<> for alignment guarantees (which the OCaml GC cannot
 // provide when it's relocating stuff)
-pub struct ExtractStructuralIndicesState(Box<sexp_structure::Avx2>);
+pub struct ExtractStructuralIndicesState(Box<structural::Avx2>);
 
 ocaml::custom! (ExtractStructuralIndicesState);
 
 #[ocaml::func]
 pub fn ml_extract_structural_indices_create_state(_unit: ocaml::Value) -> ExtractStructuralIndicesState {
-    ExtractStructuralIndicesState(Box::new(sexp_structure::Avx2::new().unwrap()))
+    ExtractStructuralIndicesState(Box::new(structural::Avx2::new().unwrap()))
 }
 
 #[ocaml::func]
@@ -22,7 +22,7 @@ pub fn ml_extract_structural_indices(
     mut output_index: ocaml::Uint)
     -> (ocaml::Uint, ocaml::Uint)
 {
-    use sexp_structure::Classifier;
+    use structural::Classifier;
 
     let output_len = output.len();
     let output_data = output.data_mut();
@@ -38,9 +38,9 @@ pub fn ml_extract_structural_indices(
 
         input_index += bitmask_len;
         if output_index + std::cmp::min(64, input.len() - input_index) <= output_len {
-            sexp_structure::CallbackResult::Continue
+            structural::CallbackResult::Continue
         } else {
-            sexp_structure::CallbackResult::Finish
+            structural::CallbackResult::Finish
         }
     });
 
