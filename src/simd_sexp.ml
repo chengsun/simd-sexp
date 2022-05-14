@@ -95,10 +95,10 @@ module State = struct
     | '"' ->
       let end_index =
         if indices_index + 1 >= indices_len
-        then raise_s [%sexp "Unclosed quote"]
-        else index (indices_index + 1)
+        then String.length input
+        else index (indices_index + 1) - 1
       in
-      emit_atom_quoted t stack input (this_index + 1) end_index, indices_index + 2
+      emit_atom_quoted t stack input (this_index + 1) end_index, indices_index + 1
     | _ ->
       let end_index =
         if indices_index + 1 >= indices_len

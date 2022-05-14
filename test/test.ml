@@ -32,96 +32,83 @@ let%expect_test _ =
     printf "\n\n"
   in
   print_io {|foo|};
-  print_io {|foo bar|};
-  print_io {|foo   bar|};
-  [%expect
-    {|
+  [%expect {|
     foo
     ^..
-    > foo
-
-
+    > foo |}];
+  print_io {|foo bar|};
+  [%expect {|
     foo bar
     ^..^^..
     > foo
-    > bar
-
-
+    > bar |}];
+  print_io {|foo   bar|};
+  [%expect {|
     foo   bar
     ^..^..^..
     > foo
     > bar |}];
   print_io {|(foo   bar)|};
-  print_io {|(fo\o   bar)|};
-  print_io {|"()"|};
-  print_io {|" "|};
-  print_io {|"fo\"o"|};
-  print_io {|fo\"o"|};
-  [%expect
-    {|
+  [%expect {|
     (foo   bar)
     ^^..^..^..^
-    > (foo bar)
-
-
+    > (foo bar) |}];
+  print_io {|(fo\o   bar)|};
+  [%expect {|
     (fo\o   bar)
     ^^...^..^..^
-    > ("fo\\o" bar)
-
-
+    > ("fo\\o" bar) |}];
+  print_io {|"()"|};
+  [%expect {|
     "()"
-    ^..^
-    > "()"
-
-
+    ^...
+    > "()" |}];
+  print_io {|" "|};
+  [%expect {|
     " "
-    ^.^
-    > " "
-
-
+    ^..
+    > " " |}];
+  print_io {|"fo\"o"|};
+  [%expect {|
     "fo\"o"
-    ^.....^
-    > "fo\"o"
-
-
+    ^......
+    > "fo\"o" |}];
+  print_io {|fo\"o"|};
+  [%expect {|
     fo\"o"
-    ^..^.^
+    ^..^..
     > "fo\\"
     > o |}];
   print_io {|(foo"x"bar)|};
-  print_io {|(foo(x)bar)|};
-  print_io {|("x"foo"y")|};
-  print_io {|((x)foo(y))|};
-  [%expect
-    {|
+  [%expect {|
     (foo"x"bar)
-    ^^..^.^^..^
-    > (foo x bar)
-
-
+    ^^..^..^..^
+    > (foo x bar) |}];
+  print_io {|(foo(x)bar)|};
+  [%expect {|
     (foo(x)bar)
     ^^..^^^^..^
-    > (foo (x) bar)
-
-
+    > (foo (x) bar) |}];
+  print_io {|("x"foo"y")|};
+  [%expect {|
     ("x"foo"y")
-    ^^.^^..^.^^
-    > (x foo y)
-
-
+    ^^..^..^..^
+    > (x foo y) |}];
+  print_io {|((x)foo(y))|};
+  [%expect {|
     ((x)foo(y))
     ^^^^^..^^^^
     > ((x) foo (y)) |}];
   print_io {|"foo\n"|};
   [%expect {|
     "foo\n"
-    ^.....^
+    ^......
     > "foo\n" |}];
   print_io {|(foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )|};
   [%expect
     {|
     (foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )
-    ^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^
+    ^^..^^...............^...^.....^^^..^^...............^...^.....^
     > (foo "bar \"x\" baz" quux)
     > (foo "bar \"x\" baz" quux) |}];
   print_io
@@ -129,7 +116,7 @@ let%expect_test _ =
   [%expect
     {|
     (foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )
-    ^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^
+    ^^..^^...............^...^.....^^^..^^...............^...^.....^^^..^^...............^...^.....^^^..^^...............^...^.....^
     > (foo "bar \"x\" baz" quux)
     > (foo "bar \"x\" baz" quux)
     > (foo "bar \"x\" baz" quux)
@@ -139,7 +126,7 @@ let%expect_test _ =
   [%expect
     {|
    (foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )(foo "bar \"x\" baz" quux      )
-  .^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^^^..^^.............^.^...^.....^
+  .^^..^^...............^...^.....^^^..^^...............^...^.....^^^..^^...............^...^.....^
   > (foo "bar \"x\" baz" quux)
   > (foo "bar \"x\" baz" quux)
   > (foo "bar \"x\" baz" quux) |}];
@@ -162,7 +149,7 @@ let%expect_test _ =
   [%expect
     {|
   (                                                              "ab")
-  ^..............................................................^..^^
+  ^..............................................................^...^
   > (ab) |}]
 ;;
 

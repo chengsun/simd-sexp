@@ -60,14 +60,13 @@ unsafe impl ocaml::IntoValue for ByteString {
 pub fn ml_unescape(input: &[u8], pos: ocaml::Uint, len: ocaml::Uint) -> Option<ByteString> {
     use escape::Unescape;
 
-    let input = &input[pos..pos+len];
-    let mut output = [0u8; input.len()];
+    let mut output: Vec<u8> = (0..len).map(|_| 0u8).collect();
 
     // TODO: nongeneric version
     let unescape = escape::GenericUnescape::new();
-    match unescape.unescape(input, &mut output[..]) {
+    match unescape.unescape(&input[pos..], &mut output[..]) {
         None => None,
-        Some(output_len) => {
+        Some((_, output_len)) => {
             output.truncate(output_len);
             Some(ByteString(output))
         }
@@ -85,7 +84,7 @@ impl<'a> OCamlSexpFactory<'a> {
 impl<'a> parser::SexpFactory for OCamlSexpFactory<'a> {
     type Sexp = ocaml::Value;
 
-    fn atom(&self, a: &[u8]) -> Self::Sexp {
+    fn atom(&self, a: Vec<u8>) -> Self::Sexp {
         unsafe {
             let inner_value = ocaml::Value::bytes(a);
             let atom_value = ocaml::Value::alloc_small(1, ocaml::Tag(0));
@@ -134,8 +133,8 @@ pub fn ml_parse_sexp(input: &[u8]) -> OCamlResult<Vec<ocaml::Value>> {
     OCamlResult(result.map_err(|err| err.to_string()))
 }
 
-impl ocaml::Custom for rust_parser::RustSexp {
-    const NAME: &'static str = "RustSexp";
+impl ocaml::Custom for rust_parser::Tape {
+    const NAME: &'static str = "Tape";
     const OPS: ocaml::custom::CustomOps = ocaml::custom::DEFAULT_CUSTOM_OPS;
     const FIXED_LENGTH: Option<ocaml::sys::custom_fixed_length> = None;
     const USED: usize = 32usize;
@@ -143,9 +142,9 @@ impl ocaml::Custom for rust_parser::RustSexp {
 }
 
 #[ocaml::func]
-pub fn ml_parse_sexp_to_rust(input: &[u8]) -> OCamlResult<Vec<rust_parser::RustSexp>> {
+pub fn ml_parse_sexp_to_rust(input: &[u8]) -> OCamlResult<rust_parser::Tape> {
 
-    let mut parser = parser::State::new(parser::SimpleVisitor::new(rust_parser::RustSexpFactory::new()));
+    let mut parser = parser::State::new(rust_parser::TapeVisitor::new());
     let result = parser.process_all(input);
     OCamlResult(result.map_err(|err| err.to_string()))
 }
