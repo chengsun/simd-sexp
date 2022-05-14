@@ -89,23 +89,23 @@ module State = struct
     in
     let this_index = index indices_index in
     match String.unsafe_get input this_index with
-    | '(' -> Stack.Open stack, indices_index + 1
-    | ')' -> emit_closing stack, indices_index + 1
-    | ' ' | '\t' | '\n' -> stack, indices_index + 1
+    | '(' -> Stack.Open stack
+    | ')' -> emit_closing stack
+    | ' ' | '\t' | '\n' -> stack
     | '"' ->
       let end_index =
         if indices_index + 1 >= indices_len
         then String.length input
         else index (indices_index + 1) - 1
       in
-      emit_atom_quoted t stack input (this_index + 1) end_index, indices_index + 1
+      emit_atom_quoted t stack input (this_index + 1) end_index
     | _ ->
       let end_index =
         if indices_index + 1 >= indices_len
         then String.length input
         else index (indices_index + 1)
       in
-      emit_atom t stack input this_index end_index, indices_index + 1
+      emit_atom t stack input this_index end_index
   ;;
 
   let process_eof (_ : t) stack = emit_eof stack
@@ -138,10 +138,8 @@ module State = struct
         assert (input_index = String.length input);
         process_eof t stack)
       else (
-        let stack, indices_index =
-          process_one t stack ~input ~indices_index ~indices_len
-        in
-        loop ~stack ~input_index ~indices_index ~indices_len)
+        let stack = process_one t stack ~input ~indices_index ~indices_len in
+        loop ~stack ~input_index ~indices_index:(indices_index + 1) ~indices_len)
     in
     loop ~stack:Nil ~input_index:0 ~indices_index:0 ~indices_len:0
   ;;
