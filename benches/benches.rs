@@ -4,7 +4,7 @@ use simd_sexp::*;
 
 fn bench_parser(c: &mut Criterion) {
     {
-        let input_pp = std::fs::read_to_string("/home/user/simd-sexp/test_data.pp.sexp").unwrap();
+        let input_pp = std::fs::read_to_string("/home/csun/simd-sexp/test_data.pp.sexp").unwrap();
         let input_pp = input_pp.as_bytes();
 
         let mut group = c.benchmark_group("parser-pp");
@@ -37,7 +37,7 @@ fn bench_parser(c: &mut Criterion) {
     }
 
     {
-        let input_mach = std::fs::read_to_string("/home/user/simd-sexp/test_data.mach.sexp").unwrap();
+        let input_mach = std::fs::read_to_string("/home/csun/simd-sexp/test_data.mach.sexp").unwrap();
         let input_mach = input_mach.as_bytes();
 
         let mut group = c.benchmark_group("parser-mach");
@@ -66,6 +66,30 @@ fn bench_parser(c: &mut Criterion) {
                                  let result = phase2.process_all(&mut input_mach1[..]).unwrap();
                                  black_box(result)
                              }));
+        group.finish();
+    }
+}
+
+fn bench_sexp_structure(c: &mut Criterion) {
+    use sexp_structure::Classifier;
+
+    {
+        let input_pp = br" (test (name test_unit) (libraries ocaml-version alcotest)) (library (name ocaml_version) (public_name ocaml-version))  (test (name test_unit) (libraries ocaml-version alcotest)) (library (name ocaml_version) (public_name ocaml-version)) ";
+
+        let mut group = c.benchmark_group("sexp-structure");
+        group.throughput(Throughput::Bytes(input_pp.len() as u64));
+        match sexp_structure::Avx2::new() {
+            None => (),
+            Some(mut classifier) => {
+                group.bench_function("avx2",
+                                     |b| b.iter(|| {
+                                         classifier.structural_indices_bitmask(&input_pp[..], |bitmask, len| {
+                                             let _ = black_box((bitmask, len));
+                                             sexp_structure::CallbackResult::Continue
+                                         })
+                                     }));
+            }
+        }
         group.finish();
     }
 }
@@ -299,6 +323,7 @@ fn bench_xor_masked_adjacent(c: &mut Criterion) {
 
 criterion_group!(benches,
                  bench_parser,
+                 bench_sexp_structure,
                  bench_unescape,
                  bench_extract,
                  bench_find_quote_transitions,
