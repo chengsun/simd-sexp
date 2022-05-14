@@ -4,11 +4,10 @@ use crate::utils::*;
 
 pub trait Visitor {
     type Context;
-    type IntermediateReturnType;
     type FinalReturnType;
-    fn atom(&mut self, atom: &[u8], parent_context: Option<&mut Self::Context>) -> Self::IntermediateReturnType;
+    fn atom(&mut self, atom: &[u8], parent_context: Option<&mut Self::Context>);
     fn list_open(&mut self, parent_context: Option<&mut Self::Context>) -> Self::Context;
-    fn list_close(&mut self, context: Self::Context, parent_context: Option<&mut Self::Context>) -> Self::IntermediateReturnType;
+    fn list_close(&mut self, context: Self::Context, parent_context: Option<&mut Self::Context>);
     fn eof(&mut self) -> Self::FinalReturnType;
 }
 
@@ -34,15 +33,14 @@ impl<SexpFactoryT: SexpFactory> SimpleVisitor<SexpFactoryT> {
 
 impl<SexpFactoryT: SexpFactory> Visitor for SimpleVisitor<SexpFactoryT> {
     type Context = usize;
-    type IntermediateReturnType = ();
     type FinalReturnType = Vec<SexpFactoryT::Sexp>;
-    fn atom(&mut self, atom: &[u8], _: Option<&mut Self::Context>) -> Self::IntermediateReturnType {
+    fn atom(&mut self, atom: &[u8], _: Option<&mut Self::Context>) {
         self.sexp_stack.push(self.sexp_factory.atom(atom));
     }
     fn list_open(&mut self, _: Option<&mut Self::Context>) -> Self::Context {
         self.sexp_stack.len()
     }
-    fn list_close(&mut self, context: Self::Context, _: Option<&mut Self::Context>) -> Self::IntermediateReturnType {
+    fn list_close(&mut self, context: Self::Context, _: Option<&mut Self::Context>) {
         let open_index = context;
         let inner = self.sexp_stack.split_off(open_index);
         let sexp = self.sexp_factory.list(inner);

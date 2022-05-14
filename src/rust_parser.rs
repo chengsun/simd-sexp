@@ -85,7 +85,13 @@ List: <len*2+1 as u32>Repr(X1)Repr(X2)...
 #[derive(Default)]
 pub struct Tape(pub Vec<u8>);
 
+pub enum TapeElementHeader {
+    Atom(usize),
+    List(usize),
+}
+
 impl Tape {
+    // TODO: rewrite as visitor
     fn fmt_mach(&self, f: &mut std::fmt::Formatter<'_>, space_separator_needed: &mut bool) -> std::fmt::Result {
         let mut i = 0usize;
         let mut list_ends: Vec<usize> = Vec::new();
@@ -114,6 +120,36 @@ impl Tape {
         assert!(list_ends.is_empty());
         Ok(())
     }
+
+    fn process<VisitorT: parser::Visitor>(&self, visitor: &mut VisitorT) {
+        let mut i = 0usize;
+        let mut list_ends: Vec<(usize, VisitorT::Context)> = Vec::new();
+        loop {
+            while list_ends.last().map(|(size, _)| size) == Some(&i) {
+                let (_, context) = list_ends.pop().unwrap();
+                let parent_context = list_ends.last_mut ().map(|(_, context)| context);
+                visitor.list_close(context, parent_context);
+            }
+            if i >= self.0.len() {
+                break;
+            }
+            let x = utils::read_u32(&self.0[i..]);
+            i += 4;
+            let is_atom = x % 2 == 0;
+            let len = (x / 2) as usize;
+            let parent_context = list_ends.last_mut().map(|(_, context)| context);
+            if is_atom {
+                visitor.atom(&self.0[i..(i + len)], parent_context);
+                i += len;
+            } else {
+                let context = visitor.list_open(parent_context);
+                list_ends.push((i + len, context));
+            }
+        }
+        assert!(list_ends.is_empty());
+        visitor.eof();
+        ()
+    }
 }
 
 impl std::fmt::Display for Tape {
@@ -140,7 +176,6 @@ pub struct TapeVisitorContext {
 
 impl parser::Visitor for TapeVisitor {
     type Context = TapeVisitorContext;
-    type IntermediateReturnType = ();
     type FinalReturnType = Tape;
     fn atom(&mut self, atom: &[u8], _: Option<&mut TapeVisitorContext>) {
         let tape_start_index = self.tape.0.len();
@@ -236,7 +271,6 @@ pub mod two_phase {
 
     impl parser::Visitor for Phase1Visitor {
         type Context = Phase1Context;
-        type IntermediateReturnType = ();
         type FinalReturnType = (usize, Vec<u8>);
         fn atom(&mut self, atom: &[u8], mut parent_context: Option<&mut Phase1Context>) {
             let varint_length = self.varint_encoder.encode_length(2 * atom.len());
@@ -296,7 +330,6 @@ pub mod two_phase {
 
     impl parser::Visitor for Phase2Visitor {
         type Context = Phase2Context;
-        type IntermediateReturnType = ();
         type FinalReturnType = Tape;
         fn atom(&mut self, atom: &[u8], _: Option<&mut Phase2Context>) {
             let varint_len =

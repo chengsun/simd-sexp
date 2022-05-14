@@ -36,5 +36,9 @@ name = "profile"
 path = "bin/profile.rs"
 required-features = ["vtune"]
 
+[[bin]]
+name = "select"
+path = "bin/select.rs"
+
 [profile.release]
 debug = true
