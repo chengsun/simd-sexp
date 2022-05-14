@@ -116,6 +116,7 @@ module State = struct
         if indices_index + 2 <= indices_len || input_index >= String.length input
         then input_index, indices_index, indices_len
         else (
+          (* TODO: this still isn't as clean a loop as the rust version *)
           let n_unconsumed_indices = indices_len - indices_index in
           for i = 0 to n_unconsumed_indices - 1 do
             Bigarray.Array1.unsafe_set
