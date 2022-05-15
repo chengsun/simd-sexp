@@ -206,7 +206,7 @@ impl Classifier for Avx2 {
 
     fn structural_indices_bitmask<F: FnMut(u64, usize) -> CallbackResult>(&mut self, input_buf: &[u8], mut f: F) {
         let (prefix, aligned, suffix) = unsafe { input_buf.align_to::<(__m256i, __m256i)>() };
-        if prefix.len() > 0 {
+        if utils::unlikely(prefix.len() > 0) {
             self.copy_state_to_generic();
             let (bitmask, len) = self.generic.structural_indices_bitmask_one(prefix);
             assert!(len == prefix.len());
@@ -225,7 +225,7 @@ impl Classifier for Avx2 {
                 }
             }
         }
-        if suffix.len() > 0 {
+        if utils::unlikely(suffix.len() > 0) {
             self.copy_state_to_generic();
             let (bitmask, len) = self.generic.structural_indices_bitmask_one(suffix);
             assert!(len == suffix.len());
