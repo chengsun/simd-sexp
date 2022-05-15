@@ -11,16 +11,14 @@ fn bench_parser(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(input_pp.len() as u64));
         group.bench_function("rust-sexp",
                              |b| b.iter(|| {
-                                 let mut input_pp = input_pp.to_vec();
                                  let mut parser = parser::State::new(parser::SimpleVisitor::new(rust_parser::SexpFactory::new()));
-                                 let result = parser.process_all(&mut input_pp[..]).unwrap();
+                                 let result = parser.process_all(input_pp).unwrap();
                                  black_box(result)
                              }));
         group.bench_function("rust-tape",
                              |b| b.iter(|| {
-                                 let mut input_pp = input_pp.to_vec();
                                  let mut parser = parser::State::new(rust_parser::TapeVisitor::new());
-                                 let result = parser.process_all(&mut input_pp[..]).unwrap();
+                                 let result = parser.process_all(input_pp).unwrap();
                                  black_box(result)
                              }));
         group.finish();
@@ -34,16 +32,14 @@ fn bench_parser(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(input_mach.len() as u64));
         group.bench_function("rust-sexp",
                              |b| b.iter(|| {
-                                 let mut input_mach = input_mach.to_vec();
                                  let mut parser = parser::State::new(parser::SimpleVisitor::new(rust_parser::SexpFactory::new()));
-                                 let result = parser.process_all(&mut input_mach[..]).unwrap();
+                                 let result = parser.process_all(input_mach).unwrap();
                                  black_box(result)
                              }));
         group.bench_function("rust-tape",
                              |b| b.iter(|| {
-                                 let mut input_mach = input_mach.to_vec();
                                  let mut parser = parser::State::new(rust_parser::TapeVisitor::new());
-                                 let result = parser.process_all(&mut input_mach[..]).unwrap();
+                                 let result = parser.process_all(input_mach).unwrap();
                                  black_box(result)
                              }));
         group.finish();
