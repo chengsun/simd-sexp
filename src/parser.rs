@@ -1,6 +1,4 @@
 use crate::{escape, extract, structural};
-use crate::utils::*;
-
 
 pub trait Visitor {
     type IntermediateAtom;
@@ -70,7 +68,6 @@ pub struct State<VisitorT: Visitor> {
     structural_classifier: structural::Avx2,
     unescape: escape::GenericUnescape,
     context_stack: Vec<VisitorT::Context>,
-    indices_buffer: [usize; INDICES_BUFFER_MAX_LEN],
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -103,7 +100,6 @@ impl<VisitorT: Visitor> State<VisitorT> {
             structural_classifier,
             unescape,
             context_stack: Vec::new(),
-            indices_buffer: [0; INDICES_BUFFER_MAX_LEN],
         }
     }
 
@@ -114,9 +110,9 @@ impl<VisitorT: Visitor> State<VisitorT> {
         Ok (self.visitor.eof())
     }
 
-    fn process_one(&mut self, input: &[u8], indices_index: usize, indices_len: usize) -> Result<(), Error> {
-        let indices_buffer = &self.indices_buffer[indices_index..indices_len];
-        match input[indices_buffer[0]] {
+    #[inline(always)]
+    fn process_one(&mut self, input: &[u8], this_index: usize, next_index: usize) -> Result<(), Error> {
+        match input[this_index] {
             b'(' => {
                 let new_context = self.visitor.list_open(self.context_stack.last_mut());
                 self.context_stack.push(new_context);
@@ -127,13 +123,11 @@ impl<VisitorT: Visitor> State<VisitorT> {
             },
             b'"' => {
                 use escape::Unescape;
-                let start_index = indices_buffer[0] + 1;
+                let start_index = this_index + 1;
                 let end_index =
-                    if unlikely(indices_buffer.len() < 2) {
-                        input.len()
-                    } else {
-                        indices_buffer[1] - 1
-                    };
+                    // NOTE: can't subtract one here because of the case where
+                    // there is an EOF before closing quote
+                    next_index;
                 let length_upper_bound = end_index - start_index;
                 let mut atom = self.visitor.atom_reserve(length_upper_bound);
                 let (_input_consumed, atom_string_len) =
@@ -143,18 +137,11 @@ impl<VisitorT: Visitor> State<VisitorT> {
             },
             ch => {
                 if ch != b' ' && ch != b'\t' && ch != b'\n' {
-                    let start_index = indices_buffer[0];
-                    let end_index =
-                        if unlikely(indices_buffer.len() < 2) {
-                            input.len()
-                        } else {
-                            indices_buffer[1]
-                        };
-                    let length = end_index - start_index;
+                    let length = next_index - this_index;
                     let mut atom = self.visitor.atom_reserve(length);
                     {
                         let output = self.visitor.atom_borrow(&mut atom);
-                        unsafe { std::ptr::copy_nonoverlapping(&input[start_index] as *const u8, &mut output[0] as *mut u8, length) };
+                        unsafe { std::ptr::copy_nonoverlapping(&input[this_index] as *const u8, &mut output[0] as *mut u8, length) };
                     }
                     self.visitor.atom(atom, length, self.context_stack.last_mut());
                 }
@@ -168,13 +155,14 @@ impl<VisitorT: Visitor> State<VisitorT> {
 
         let mut input_index = 0;
         let mut indices_len = 0;
+        let mut indices_buffer = [0; INDICES_BUFFER_MAX_LEN];
 
         loop {
             self.structural_classifier.structural_indices_bitmask(
                 &input[input_index..],
                 |bitmask, bitmask_len| {
                     extract::safe_generic(|bit_offset| {
-                        self.indices_buffer[indices_len] = input_index + bit_offset;
+                        indices_buffer[indices_len] = input_index + bit_offset;
                         indices_len += 1;
                     }, bitmask);
 
@@ -188,14 +176,15 @@ impl<VisitorT: Visitor> State<VisitorT> {
 
             let input_fully_consumed = input_index >= input.len();
 
-            for indices_index in 0..(if input_fully_consumed { indices_len } else { indices_len - 1 }) {
-                self.process_one(input, indices_index, indices_len)?;
+            for indices_index in 0..(indices_len - 1) {
+                self.process_one(input, indices_buffer[indices_index], indices_buffer[indices_index + 1])?;
             }
             if input_fully_consumed {
+                self.process_one(input, indices_buffer[indices_len - 1], input.len())?;
                 return self.process_eof();
             }
 
-            self.indices_buffer[0] = self.indices_buffer[indices_len - 1];
+            indices_buffer[0] = indices_buffer[indices_len - 1];
             indices_len = 1;
         }
     }
