@@ -191,7 +191,7 @@ impl<VisitorT: Visitor> State<VisitorT> {
                     }
                 });
 
-            for indices_index in 0..(indices_len - 1) {
+            for indices_index in 0..(indices_len.saturating_sub(1)) {
                 self.process_one(
                     &input[..],
                     indices_buffer[indices_index] - input_start_index,
@@ -201,18 +201,25 @@ impl<VisitorT: Visitor> State<VisitorT> {
             if unlikely(input_index - input_start_index >= input.len()) {
                 match buf_reader.fill_buf() {
                     Ok(&[]) => {
-                        self.process_one(
-                            &input[..],
-                            indices_buffer[indices_len - 1] - input_start_index,
-                            input.len())?;
+                        if indices_len > 0 {
+                            self.process_one(
+                                &input[..],
+                                indices_buffer[indices_len - 1] - input_start_index,
+                                input.len())?;
+                        }
                         return self.process_eof();
                     },
                     Ok(buf) => {
-                        let length_to_chop = indices_buffer[indices_len - 1] - input_start_index;
-                        let length_to_keep = input.len() - length_to_chop;
-                        input_start_index += length_to_chop;
-                        unsafe { std::ptr::copy(&input[length_to_chop] as *const u8, &mut input[0] as *mut u8, length_to_keep); }
-                        input.truncate(length_to_keep);
+                        if indices_len > 0 {
+                            let length_to_chop = indices_buffer[indices_len - 1] - input_start_index;
+                            let length_to_keep = input.len() - length_to_chop;
+                            input_start_index += length_to_chop;
+                            unsafe { std::ptr::copy(&input[length_to_chop] as *const u8, &mut input[0] as *mut u8, length_to_keep); }
+                            input.truncate(length_to_keep);
+                        } else {
+                            input_start_index += input.len();
+                            input.clear();
+                        }
 
                         input.extend_from_slice(buf);
                         let len = buf.len();
@@ -224,8 +231,10 @@ impl<VisitorT: Visitor> State<VisitorT> {
                 }
             }
 
-            indices_buffer[0] = indices_buffer[indices_len - 1];
-            indices_len = 1;
+            if indices_len > 0 {
+                indices_buffer[0] = indices_buffer[indices_len - 1];
+                indices_len = 1;
+            }
         }
     }
 
@@ -253,12 +262,14 @@ impl<VisitorT: Visitor> State<VisitorT> {
                     }
                 });
 
-            for indices_index in 0..(indices_len - 1) {
+            for indices_index in 0..(indices_len.saturating_sub(1)) {
                 self.process_one(input, indices_buffer[indices_index], indices_buffer[indices_index + 1])?;
             }
 
             if input_index >= input.len() {
-                self.process_one(input, indices_buffer[indices_len - 1], input.len())?;
+                if indices_len > 0 {
+                    self.process_one(input, indices_buffer[indices_len - 1], input.len())?;
+                }
                 return self.process_eof();
             }
 
