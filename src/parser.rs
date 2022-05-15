@@ -1,4 +1,5 @@
 use crate::{escape, extract, structural};
+use crate::utils::*;
 
 pub trait Visitor {
     type IntermediateAtom;
@@ -76,6 +77,7 @@ pub enum Error {
     UnmatchedCloseParen,
     UnclosedQuote,
     InvalidEscape,
+    IOError(std::io::ErrorKind),
 }
 
 impl std::fmt::Display for Error {
@@ -85,6 +87,7 @@ impl std::fmt::Display for Error {
             Error::UnmatchedCloseParen => { write!(f, "Unmatched close paren") }
             Error::UnclosedQuote => { write!(f, "Unclosed quote") }
             Error::InvalidEscape => { write!(f, "Invalid escape") }
+            Error::IOError(e) => { write!(f, "IO error: {}", e) }
         }
     }
 }
@@ -150,6 +153,82 @@ impl<VisitorT: Visitor> State<VisitorT> {
         Ok(())
     }
 
+    pub fn process_streaming<BufReadT : std::io::BufRead>(&mut self, buf_reader: &mut BufReadT) -> Result<VisitorT::FinalReturnType, Error> {
+        use structural::Classifier;
+
+        let mut input_index = 0;
+        let mut indices_len = 0;
+        let mut indices_buffer = [0; INDICES_BUFFER_MAX_LEN];
+
+        let mut input_start_index = 0;
+        let mut input;
+
+        match buf_reader.fill_buf() {
+            Ok(&[]) => { return self.process_eof(); },
+            Ok(buf) => {
+                input = buf.to_owned();
+                let len = buf.len();
+                std::mem::drop(buf);
+                buf_reader.consume(len);
+            },
+            Err(e) => { return Err(Error::IOError(e.kind())) },
+        }
+
+        loop {
+            self.structural_classifier.structural_indices_bitmask(
+                &input[(input_index - input_start_index)..],
+                |bitmask, bitmask_len| {
+                    extract::safe_generic(|bit_offset| {
+                        indices_buffer[indices_len] = input_index + bit_offset;
+                        indices_len += 1;
+                    }, bitmask);
+
+                    input_index += bitmask_len;
+                    if indices_len + 64 <= INDICES_BUFFER_MAX_LEN {
+                        structural::CallbackResult::Continue
+                    } else {
+                        structural::CallbackResult::Finish
+                    }
+                });
+
+            for indices_index in 0..(indices_len - 1) {
+                self.process_one(
+                    &input[..],
+                    indices_buffer[indices_index] - input_start_index,
+                    indices_buffer[indices_index + 1] - input_start_index)?;
+            }
+
+            if unlikely(input_index - input_start_index >= input.len()) {
+                match buf_reader.fill_buf() {
+                    Ok(&[]) => {
+                        self.process_one(
+                            &input[..],
+                            indices_buffer[indices_len - 1] - input_start_index,
+                            input.len())?;
+                        return self.process_eof();
+                    },
+                    Ok(buf) => {
+                        let length_to_chop = indices_buffer[indices_len - 1] - input_start_index;
+                        let length_to_keep = input.len() - length_to_chop;
+                        input_start_index += length_to_chop;
+                        unsafe { std::ptr::copy(&input[length_to_chop] as *const u8, &mut input[0] as *mut u8, length_to_keep); }
+                        input.truncate(length_to_keep);
+
+                        input.extend_from_slice(buf);
+                        let len = buf.len();
+
+                        std::mem::drop(buf);
+                        buf_reader.consume(len);
+                    },
+                    Err(e) => { return Err(Error::IOError(e.kind())) },
+                }
+            }
+
+            indices_buffer[0] = indices_buffer[indices_len - 1];
+            indices_len = 1;
+        }
+    }
+
     pub fn process_all(&mut self, input: &[u8]) -> Result<VisitorT::FinalReturnType, Error> {
         use structural::Classifier;
 
@@ -174,12 +253,11 @@ impl<VisitorT: Visitor> State<VisitorT> {
                     }
                 });
 
-            let input_fully_consumed = input_index >= input.len();
-
             for indices_index in 0..(indices_len - 1) {
                 self.process_one(input, indices_buffer[indices_index], indices_buffer[indices_index + 1])?;
             }
-            if input_fully_consumed {
+
+            if input_index >= input.len() {
                 self.process_one(input, indices_buffer[indices_len - 1], input.len())?;
                 return self.process_eof();
             }

@@ -76,11 +76,12 @@ impl parser::Visitor for SelectVisitor {
 
 fn main() {
     let mut args = std::env::args();
-    let input_pp = std::fs::read_to_string(args.nth(1).expect("expected filename argument")).expect("couldn't read from filename");
+
+    args.next();
 
     let select: HashSet<Vec<u8>> = args.map(|s| s.as_bytes().to_owned()).collect();
 
-    let mut input_pp_v = input_pp.as_bytes().to_vec();
+    let mut stdin = std::io::stdin().lock();
     let mut parser = parser::State::new(SelectVisitor { select });
-    let () = parser.process_all(&mut input_pp_v[..]).unwrap();
+    let () = parser.process_streaming(&mut stdin).unwrap();
 }
