@@ -1,8 +1,18 @@
 use simd_sexp::*;
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 pub struct SelectVisitor {
-    select: HashSet<Vec<u8>>,
+    select: BTreeSet<Vec<u8>>,
+    atom_buffer: Option<Vec<u8>>,
+}
+
+impl SelectVisitor {
+    fn new(select: BTreeSet<Vec<u8>>) -> Self {
+        Self {
+            select,
+            atom_buffer: Some(Vec::with_capacity(128)),
+        }
+    }
 }
 
 pub enum SelectVisitorContext {
@@ -17,28 +27,35 @@ impl parser::Visitor for SelectVisitor {
     type Context = SelectVisitorContext;
     type FinalReturnType = ();
     fn atom_reserve(&mut self, length_upper_bound: usize) -> Self::IntermediateAtom {
-        (0..length_upper_bound).map(|_| 0u8).collect()
+        let mut atom_buffer = self.atom_buffer.take().unwrap();
+        atom_buffer.resize(length_upper_bound, 0u8);
+        atom_buffer
     }
-    fn atom_borrow<'a, 'b : 'a>(&'b mut self, atom: &'a mut Self::IntermediateAtom) -> &'a mut [u8] {
-        &mut atom[..]
+    fn atom_borrow<'a, 'b : 'a>(&'b mut self, atom_buffer: &'a mut Self::IntermediateAtom) -> &'a mut [u8] {
+        &mut atom_buffer[..]
     }
-    fn atom(&mut self, mut atom: Self::IntermediateAtom, length: usize, parent_context: Option<&mut Self::Context>) {
-        atom.truncate(length);
+    fn atom(&mut self, mut atom_buffer: Self::IntermediateAtom, length: usize, parent_context: Option<&mut Self::Context>) {
+        atom_buffer.truncate(length);
         match parent_context {
             None => (),
             Some(parent_context) => {
                 *parent_context = match parent_context {
                     SelectVisitorContext::Start =>
-                        if self.select.contains(&atom) { SelectVisitorContext::SelectNext(atom.to_owned()) } else { SelectVisitorContext::Ignore },
+                        if self.select.contains(&atom_buffer) {
+                            SelectVisitorContext::SelectNext(atom_buffer.clone())
+                        } else {
+                            SelectVisitorContext::Ignore
+                        },
                     SelectVisitorContext::SelectNext(key) => {
                         let key = std::mem::take(key);
-                        SelectVisitorContext::Selected(key, atom)
+                        SelectVisitorContext::Selected(key, atom_buffer.clone())
                     },
                     SelectVisitorContext::Selected(_, _) => SelectVisitorContext::Ignore,
                     SelectVisitorContext::Ignore => SelectVisitorContext::Ignore,
                 };
             },
         };
+        self.atom_buffer = Some(atom_buffer);
     }
 
     fn list_open(&mut self, parent_context: Option<&mut Self::Context>) -> Self::Context {
@@ -79,9 +96,10 @@ fn main() {
 
     args.next();
 
-    let select: HashSet<Vec<u8>> = args.map(|s| s.as_bytes().to_owned()).collect();
+    let select: BTreeSet<Vec<u8>> = args.map(|s| s.as_bytes().to_owned()).collect();
 
-    let mut stdin = std::io::stdin().lock();
-    let mut parser = parser::State::new(SelectVisitor { select });
+    let stdin = std::io::stdin();
+    let mut stdin = stdin.lock();
+    let mut parser = parser::State::new(SelectVisitor::new(select));
     let () = parser.process_streaming(&mut stdin).unwrap();
 }
