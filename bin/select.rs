@@ -1,15 +1,19 @@
 use simd_sexp::*;
 use std::collections::BTreeSet;
+use std::io::{stdin, stdout, StdoutLock, Write};
+use std::rc::Rc;
 
-pub struct SelectVisitor {
-    select: BTreeSet<Vec<u8>>,
+pub struct SelectVisitor<'a> {
+    select: BTreeSet<Rc<[u8]>>,
+    stdout: std::io::StdoutLock<'a>,
     atom_buffer: Option<Vec<u8>>,
 }
 
-impl SelectVisitor {
-    fn new(select: BTreeSet<Vec<u8>>) -> Self {
+impl<'a> SelectVisitor<'a> {
+    fn new(select: BTreeSet<Rc<[u8]>>, stdout: StdoutLock<'a>) -> Self {
         Self {
             select,
+            stdout,
             atom_buffer: Some(Vec::with_capacity(128)),
         }
     }
@@ -17,23 +21,29 @@ impl SelectVisitor {
 
 pub enum SelectVisitorContext {
     Start,
-    SelectNext(Vec<u8>),
-    Selected(Vec<u8>, Vec<u8>),
+    SelectNext(Rc<[u8]>),
+    Selected(Rc<[u8]>, Vec<u8>),
     Ignore,
 }
 
-impl parser::Visitor for SelectVisitor {
+impl<'c> parser::Visitor for SelectVisitor<'c> {
     type IntermediateAtom = Vec<u8>;
     type Context = SelectVisitorContext;
     type FinalReturnType = ();
+
+    #[inline(always)]
     fn atom_reserve(&mut self, length_upper_bound: usize) -> Self::IntermediateAtom {
         let mut atom_buffer = self.atom_buffer.take().unwrap();
         atom_buffer.resize(length_upper_bound, 0u8);
         atom_buffer
     }
+
+    #[inline(always)]
     fn atom_borrow<'a, 'b : 'a>(&'b mut self, atom_buffer: &'a mut Self::IntermediateAtom) -> &'a mut [u8] {
         &mut atom_buffer[..]
     }
+
+    #[inline(always)]
     fn atom(&mut self, mut atom_buffer: Self::IntermediateAtom, length: usize, parent_context: Option<&mut Self::Context>) {
         atom_buffer.truncate(length);
         match parent_context {
@@ -41,14 +51,12 @@ impl parser::Visitor for SelectVisitor {
             Some(parent_context) => {
                 *parent_context = match parent_context {
                     SelectVisitorContext::Start =>
-                        if self.select.contains(&atom_buffer) {
-                            SelectVisitorContext::SelectNext(atom_buffer.clone())
-                        } else {
-                            SelectVisitorContext::Ignore
+                        match self.select.get(&atom_buffer[..]) {
+                            Some(key) => SelectVisitorContext::SelectNext(key.clone()),
+                            None => SelectVisitorContext::Ignore,
                         },
                     SelectVisitorContext::SelectNext(key) => {
-                        let key = std::mem::take(key);
-                        SelectVisitorContext::Selected(key, atom_buffer.clone())
+                        SelectVisitorContext::Selected(key.clone(), atom_buffer.clone())
                     },
                     SelectVisitorContext::Selected(_, _) => SelectVisitorContext::Ignore,
                     SelectVisitorContext::Ignore => SelectVisitorContext::Ignore,
@@ -58,6 +66,7 @@ impl parser::Visitor for SelectVisitor {
         self.atom_buffer = Some(atom_buffer);
     }
 
+    #[inline(always)]
     fn list_open(&mut self, parent_context: Option<&mut Self::Context>) -> Self::Context {
         match parent_context {
             None => (),
@@ -76,6 +85,7 @@ impl parser::Visitor for SelectVisitor {
         SelectVisitorContext::Start
     }
 
+    #[inline(always)]
     fn list_close(&mut self, context: Self::Context, _parent_context: Option<&mut Self::Context>) {
         match context {
             SelectVisitorContext::Start |
@@ -87,6 +97,7 @@ impl parser::Visitor for SelectVisitor {
         };
     }
 
+    #[inline(always)]
     fn eof(&mut self) {
     }
 }
@@ -96,10 +107,12 @@ fn main() {
 
     args.next();
 
-    let select: BTreeSet<Vec<u8>> = args.map(|s| s.as_bytes().to_owned()).collect();
+    let select: BTreeSet<Rc<[u8]>> = args.map(|s| Rc::from(s.as_bytes())).collect();
 
-    let stdin = std::io::stdin();
+    let stdin = stdin();
     let mut stdin = stdin.lock();
-    let mut parser = parser::State::new(SelectVisitor::new(select));
+    let stdout = stdout();
+    let stdout = stdout.lock();
+    let mut parser = parser::State::new(SelectVisitor::new(select, stdout));
     let () = parser.process_streaming(&mut stdin).unwrap();
 }
