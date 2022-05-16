@@ -40,5 +40,9 @@ required-features = ["vtune"]
 name = "select"
 path = "bin/select.rs"
 
+[[bin]]
+name = "simplify"
+path = "bin/simplify.rs"
+
 [profile.release]
 debug = true

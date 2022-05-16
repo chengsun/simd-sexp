@@ -16,12 +16,13 @@ pub trait Classifier {
     const NAME: &'static str;
 
     /// Returns a bitmask for start/end of every unquoted atom; start/end of every quoted atom; parens
-    /// Consumes up to 64 bytes
+    /// Consumes all of input_buf, up to 64 bytes at a time.
     /// Returns the bitmask as well as the number of bits that were consumed
     fn structural_indices_bitmask<F: FnMut(u64, usize) -> CallbackResult>
         (&mut self, input_buf: &[u8], f: F);
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub struct Generic {
     escape: bool,
     quote_state: bool,
@@ -78,6 +79,7 @@ impl Classifier for Generic {
     }
 }
 
+#[derive(Debug)]
 pub struct Avx2 {
     /* constants */
     clmul: clmul::Sse2Pclmulqdq,
@@ -209,12 +211,12 @@ impl Classifier for Avx2 {
         if utils::unlikely(prefix.len() > 0) {
             self.copy_state_to_generic();
             let (bitmask, len) = self.generic.structural_indices_bitmask_one(prefix);
+            self.copy_state_from_generic();
             assert!(len == prefix.len());
             match f(bitmask, len) {
                 CallbackResult::Continue => (),
                 CallbackResult::Finish => { return; },
             }
-            self.copy_state_from_generic();
         }
         for (lo, hi) in aligned {
             unsafe {
@@ -228,29 +230,29 @@ impl Classifier for Avx2 {
         if utils::unlikely(suffix.len() > 0) {
             self.copy_state_to_generic();
             let (bitmask, len) = self.generic.structural_indices_bitmask_one(suffix);
+            self.copy_state_from_generic();
             assert!(len == suffix.len());
             match f(bitmask, len) {
                 CallbackResult::Continue => (),
                 CallbackResult::Finish => { return; },
             }
-            self.copy_state_from_generic();
         }
     }
 }
 
 #[cfg(test)]
 mod structural_tests {
-    use rand::prelude::Distribution;
+    use rand::{prelude::Distribution, SeedableRng};
 
     use super::*;
     use crate::utils::*;
 
     trait Testable {
-        fn run_test(self: Self, input: &[u8], output: &[bool]);
+        fn run_test(&mut self, input: &[u8], output: &[bool]);
     }
 
     impl<T: Classifier> Testable for T {
-        fn run_test(mut self: Self, input: &[u8], output: &[bool]) {
+        fn run_test(&mut self, input: &[u8], output: &[bool]) {
             let mut actual_output: Vec<bool> = Vec::new();
             let mut lens = Vec::new();
             self.structural_indices_bitmask(input, |bitmask, bitmask_len| {
@@ -279,11 +281,15 @@ mod structural_tests {
 
 
     fn run_test(input: &[u8], output: &[bool]) {
-        let generic = Generic::new();
+        let mut generic = Generic::new();
         generic.run_test(input, output);
 
         match Avx2::new() {
-            Some(classifier) => classifier.run_test(input, output),
+            Some(mut avx2) => {
+                avx2.run_test(input, output);
+                avx2.copy_state_to_generic();
+                assert_eq!(generic, avx2.generic);
+            },
             None => (),
         }
     }
@@ -294,32 +300,93 @@ mod structural_tests {
     }
 
     #[repr(align(64))]
-    struct TestInput([u8; 128]);
+    struct TestInput<T>(T);
+
 
     #[test]
-    fn test_random() {
-        let chars = b"() \n\t\"\\.";
-        let random_char = rand::distributions::Uniform::new(0, chars.len()).map(|i| chars[i]);
+    fn test_2() {
+        let input_1 = [b'"'];
+        let mut input_2 = TestInput([b' '; 64]);
+        input_2.0[0] = b'"';
+        input_2.0[1] = b'(';
+        let mut expected_output = [false; 65];
+        expected_output[0] = true;
+        expected_output[2] = true;
 
-        for iteration in 0..1000 {
-            let mut input = TestInput([0u8; 128]);
-            let alignment = iteration % 64;
-            let input = &mut input.0[alignment..];
-            for i in 0..input.len() {
-                input[i] = random_char.sample(&mut rand::thread_rng());
-            }
-            let generic_output = {
-                let mut generic = Generic::new();
-                let mut output: Vec<bool> = Vec::new();
+        {
+            let mut generic = Generic::new();
+            let mut output: Vec<bool> = Vec::new();
+            for input in [&input_1[..], &input_2.0[..]] {
                 generic.structural_indices_bitmask(&input[..], |bitmask, bitmask_len| {
                     for i in 0..bitmask_len {
                         output.push(bitmask & (1 << i) != 0);
                     }
-                    CallbackResult::Continue
+                    CallbackResult::Finish
                 });
+            }
+            assert_eq!(output, expected_output);
+        }
+
+        {
+            let mut avx2 = Avx2::new().unwrap();
+            let mut output: Vec<bool> = Vec::new();
+            for input in [&input_1[..], &input_2.0[..]] {
+                avx2.structural_indices_bitmask(&input[..], |bitmask, bitmask_len| {
+                    for i in 0..bitmask_len {
+                        output.push(bitmask & (1 << i) != 0);
+                    }
+                    CallbackResult::Finish
+                });
+            }
+            assert_eq!(output, expected_output);
+        }
+    }
+
+    #[test]
+    fn test_random() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+
+        let chars = b"() \n\"\\a";
+        let random_char = rand::distributions::Uniform::new(0, chars.len()).map(|i| chars[i]);
+        let random_alignment = rand::distributions::Uniform::new(0, 64);
+
+        for _ in 0..1000 {
+            let mut input_bufs = [TestInput([0u8; 192]), TestInput([0u8; 192])];
+            let inputs: Vec<&[u8]> = input_bufs.iter_mut().map(|input_buf| {
+                let alignment = random_alignment.sample(&mut rng);
+                let input = &mut input_buf.0[alignment..];
+                for i in 0..input.len() {
+                    input[i] = random_char.sample(&mut rng);
+                }
+                &*input
+            }).collect();
+            let generic_output = {
+                let mut generic = Generic::new();
+                let mut output: Vec<bool> = Vec::new();
+                for input in inputs.iter() {
+                    generic.structural_indices_bitmask(&input[..], |bitmask, bitmask_len| {
+                        for i in 0..bitmask_len {
+                            output.push(bitmask & (1 << i) != 0);
+                        }
+                        CallbackResult::Continue
+                    });
+                }
                 output
             };
-            run_test(&input[..], &generic_output[..]);
+            let avx2_output = {
+                let mut avx2 = Avx2::new().unwrap();
+                let mut output: Vec<bool> = Vec::new();
+                for input in inputs {
+                    avx2.structural_indices_bitmask(&input[..], |bitmask, bitmask_len| {
+                        for i in 0..bitmask_len {
+                            output.push(bitmask & (1 << i) != 0);
+                        }
+                        CallbackResult::Continue
+                    });
+                }
+                output
+            };
+            assert_eq!(generic_output, avx2_output);
         }
     }
 }
