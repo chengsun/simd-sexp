@@ -116,6 +116,6 @@ fn main() {
     let mut stdin = stdin.lock();
     let stdout = stdout();
     let stdout = stdout.lock();
-    let mut parser = parser::State::new(SelectVisitor::new(select, stdout));
+    let mut parser = parser::State::from_visitor(SelectVisitor::new(select, stdout));
     let () = parser.process_streaming(&mut stdin).unwrap();
 }

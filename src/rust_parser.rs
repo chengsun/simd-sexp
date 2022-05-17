@@ -231,14 +231,14 @@ mod parser_tests {
         };
 
         {
-            let mut parser = parser::State::new(parser::SimpleVisitor::new(SexpFactory::new()));
+            let mut parser = parser::State::from_sexp_factory(SexpFactory::new());
             let sexp_or_error = parser.process_all(&input[..]);
             let output = sexp_or_error.map(|sexps| SexpMulti(sexps).to_string());
             validate("SimpleVisitor<SexpFactory>", output);
         }
 
         {
-            let mut parser = parser::State::new(parser::SimpleVisitor::new(SexpFactory::new()));
+            let mut parser = parser::State::from_sexp_factory(SexpFactory::new());
             let mut buf_reader = std::io::BufReader::with_capacity(1, input);
             let sexp_or_error = parser.process_streaming(&mut buf_reader);
             let output = sexp_or_error.map(|sexps| SexpMulti(sexps).to_string());
@@ -246,7 +246,7 @@ mod parser_tests {
         }
 
         {
-            let mut parser = parser::State::new(TapeVisitor::new());
+            let mut parser = parser::State::from_visitor(TapeVisitor::new());
             let sexp_or_error = parser.process_all(&input[..]);
             let output = sexp_or_error.map(|tape| tape.to_string());
             validate("TapeVisitor", output);

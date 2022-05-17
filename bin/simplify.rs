@@ -1,6 +1,6 @@
 use simd_sexp::*;
 use structural::Classifier;
-use std::io::{BufRead, Read};
+use std::io::Read;
 
 fn main() {
     let mut stdin = std::io::stdin().lock();

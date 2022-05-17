@@ -1,6 +1,12 @@
 use crate::{escape, extract, structural};
 use crate::utils::*;
 
+pub trait SexpFactory {
+    type Sexp;
+    fn atom(&self, a: Vec<u8>) -> Self::Sexp;
+    fn list(&self, xs: Vec<Self::Sexp>) -> Self::Sexp;
+}
+
 pub trait Visitor {
     type IntermediateAtom;
     type Context;
@@ -13,10 +19,10 @@ pub trait Visitor {
     fn eof(&mut self) -> Self::FinalReturnType;
 }
 
-pub trait SexpFactory {
-    type Sexp;
-    fn atom(&self, a: Vec<u8>) -> Self::Sexp;
-    fn list(&self, xs: Vec<Self::Sexp>) -> Self::Sexp;
+pub trait Stage2 {
+    type FinalReturnType;
+    fn process_one(&mut self, input: &[u8], this_index: usize, next_index: usize) -> Result<(), Error>;
+    fn process_eof(&mut self) -> Result<Self::FinalReturnType, Error>;
 }
 
 pub struct SimpleVisitor<SexpFactoryT: SexpFactory> {
@@ -25,7 +31,7 @@ pub struct SimpleVisitor<SexpFactoryT: SexpFactory> {
 }
 
 impl<SexpFactoryT: SexpFactory> SimpleVisitor<SexpFactoryT> {
-    pub fn new(sexp_factory: SexpFactoryT) -> Self {
+    fn new(sexp_factory: SexpFactoryT) -> Self {
         SimpleVisitor {
             sexp_factory,
             sexp_stack: Vec::new(),
@@ -61,57 +67,26 @@ impl<SexpFactoryT: SexpFactory> Visitor for SimpleVisitor<SexpFactoryT> {
     }
 }
 
-/// Must be >= 64. Doesn't affect correctness or impose limitations on sexp being parsed.
-const INDICES_BUFFER_MAX_LEN: usize = 512;
-
-pub struct State<VisitorT: Visitor> {
+pub struct VisitorState<VisitorT: Visitor> {
     visitor: VisitorT,
-    structural_classifier: structural::Avx2,
-    unescape: escape::GenericUnescape,
     context_stack: Vec<VisitorT::Context>,
+    unescape: escape::GenericUnescape,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Error {
-    UnmatchedOpenParen,
-    UnmatchedCloseParen,
-    UnclosedQuote,
-    InvalidEscape,
-    IOError(std::io::ErrorKind),
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::UnmatchedOpenParen => { write!(f, "Unmatched open paren") }
-            Error::UnmatchedCloseParen => { write!(f, "Unmatched close paren") }
-            Error::UnclosedQuote => { write!(f, "Unclosed quote") }
-            Error::InvalidEscape => { write!(f, "Invalid escape") }
-            Error::IOError(e) => { write!(f, "IO error: {}", e) }
-        }
-    }
-}
-
-impl<VisitorT: Visitor> State<VisitorT> {
-    pub fn new(visitor: VisitorT) -> Self {
-        let structural_classifier = structural::Avx2::new().unwrap();
-
+impl<VisitorT: Visitor> VisitorState<VisitorT> {
+    fn new(visitor: VisitorT) -> Self {
         let unescape = escape::GenericUnescape::new();
 
-        State {
+        Self {
             visitor,
-            structural_classifier,
-            unescape,
             context_stack: Vec::new(),
+            unescape,
         }
     }
+}
 
-    fn process_eof(&mut self) -> Result<VisitorT::FinalReturnType, Error> {
-        if self.context_stack.len() > 0 {
-            return Err(Error::UnmatchedOpenParen);
-        }
-        Ok (self.visitor.eof())
-    }
+impl<VisitorT: Visitor> Stage2 for VisitorState<VisitorT> {
+    type FinalReturnType = VisitorT::FinalReturnType;
 
     #[inline(always)]
     fn process_one(&mut self, input: &[u8], this_index: usize, next_index: usize) -> Result<(), Error> {
@@ -153,7 +128,67 @@ impl<VisitorT: Visitor> State<VisitorT> {
         Ok(())
     }
 
-    pub fn process_streaming<BufReadT : std::io::BufRead>(&mut self, buf_reader: &mut BufReadT) -> Result<VisitorT::FinalReturnType, Error> {
+    fn process_eof(&mut self) -> Result<VisitorT::FinalReturnType, Error> {
+        if self.context_stack.len() > 0 {
+            return Err(Error::UnmatchedOpenParen);
+        }
+        Ok (self.visitor.eof())
+    }
+
+}
+
+/// Must be >= 64. Doesn't affect correctness or impose limitations on sexp being parsed.
+const INDICES_BUFFER_MAX_LEN: usize = 512;
+
+pub struct State<Stage2T> {
+    stage2: Stage2T,
+    structural_classifier: structural::Avx2,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Error {
+    UnmatchedOpenParen,
+    UnmatchedCloseParen,
+    UnclosedQuote,
+    InvalidEscape,
+    IOError(std::io::ErrorKind),
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::UnmatchedOpenParen => { write!(f, "Unmatched open paren") }
+            Error::UnmatchedCloseParen => { write!(f, "Unmatched close paren") }
+            Error::UnclosedQuote => { write!(f, "Unclosed quote") }
+            Error::InvalidEscape => { write!(f, "Invalid escape") }
+            Error::IOError(e) => { write!(f, "IO error: {}", e) }
+        }
+    }
+}
+
+impl<SexpFactoryT: SexpFactory> State<VisitorState<SimpleVisitor<SexpFactoryT>>> {
+    pub fn from_sexp_factory(sexp_factory: SexpFactoryT) -> Self {
+        Self::from_visitor(SimpleVisitor::new(sexp_factory))
+    }
+}
+
+impl<VisitorT: Visitor> State<VisitorState<VisitorT>> {
+    pub fn from_visitor(visitor: VisitorT) -> Self {
+        Self::new(VisitorState::new(visitor))
+    }
+}
+
+impl<Stage2T: Stage2> State<Stage2T> {
+    pub fn new(stage2: Stage2T) -> Self {
+        let structural_classifier = structural::Avx2::new().unwrap();
+
+        State {
+            stage2,
+            structural_classifier,
+        }
+    }
+
+    pub fn process_streaming<BufReadT : std::io::BufRead>(&mut self, buf_reader: &mut BufReadT) -> Result<Stage2T::FinalReturnType, Error> {
         use structural::Classifier;
 
         let mut input_index = 0;
@@ -164,7 +199,7 @@ impl<VisitorT: Visitor> State<VisitorT> {
         let mut input;
 
         match buf_reader.fill_buf() {
-            Ok(&[]) => { return self.process_eof(); },
+            Ok(&[]) => { return self.stage2.process_eof(); },
             Ok(buf) => {
                 input = buf.to_owned();
                 let len = buf.len();
@@ -192,7 +227,7 @@ impl<VisitorT: Visitor> State<VisitorT> {
                 });
 
             for indices_index in 0..(indices_len.saturating_sub(1)) {
-                self.process_one(
+                self.stage2.process_one(
                     &input[..],
                     indices_buffer[indices_index] - input_start_index,
                     indices_buffer[indices_index + 1] - input_start_index)?;
@@ -202,12 +237,12 @@ impl<VisitorT: Visitor> State<VisitorT> {
                 match buf_reader.fill_buf() {
                     Ok(&[]) => {
                         if indices_len > 0 {
-                            self.process_one(
+                            self.stage2.process_one(
                                 &input[..],
                                 indices_buffer[indices_len - 1] - input_start_index,
                                 input.len())?;
                         }
-                        return self.process_eof();
+                        return self.stage2.process_eof();
                     },
                     Ok(buf) => {
                         if indices_len > 0 {
@@ -238,7 +273,7 @@ impl<VisitorT: Visitor> State<VisitorT> {
         }
     }
 
-    pub fn process_all(&mut self, input: &[u8]) -> Result<VisitorT::FinalReturnType, Error> {
+    pub fn process_all(&mut self, input: &[u8]) -> Result<Stage2T::FinalReturnType, Error> {
         use structural::Classifier;
 
         let mut input_index = 0;
@@ -263,14 +298,14 @@ impl<VisitorT: Visitor> State<VisitorT> {
                 });
 
             for indices_index in 0..(indices_len.saturating_sub(1)) {
-                self.process_one(input, indices_buffer[indices_index], indices_buffer[indices_index + 1])?;
+                self.stage2.process_one(input, indices_buffer[indices_index], indices_buffer[indices_index + 1])?;
             }
 
             if input_index >= input.len() {
                 if indices_len > 0 {
-                    self.process_one(input, indices_buffer[indices_len - 1], input.len())?;
+                    self.stage2.process_one(input, indices_buffer[indices_len - 1], input.len())?;
                 }
-                return self.process_eof();
+                return self.stage2.process_eof();
             }
 
             indices_buffer[0] = indices_buffer[indices_len - 1];

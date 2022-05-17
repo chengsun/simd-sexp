@@ -11,13 +11,13 @@ fn bench_parser(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(input_pp.len() as u64));
         group.bench_function("rust-sexp",
                              |b| b.iter(|| {
-                                 let mut parser = parser::State::new(parser::SimpleVisitor::new(rust_parser::SexpFactory::new()));
+                                 let mut parser = parser::State::from_sexp_factory(rust_parser::SexpFactory::new());
                                  let result = parser.process_all(input_pp).unwrap();
                                  black_box(result)
                              }));
         group.bench_function("rust-tape",
                              |b| b.iter(|| {
-                                 let mut parser = parser::State::new(rust_parser::TapeVisitor::new());
+                                 let mut parser = parser::State::from_visitor(rust_parser::TapeVisitor::new());
                                  let result = parser.process_all(input_pp).unwrap();
                                  black_box(result)
                              }));
@@ -32,13 +32,13 @@ fn bench_parser(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(input_mach.len() as u64));
         group.bench_function("rust-sexp",
                              |b| b.iter(|| {
-                                 let mut parser = parser::State::new(parser::SimpleVisitor::new(rust_parser::SexpFactory::new()));
+                                 let mut parser = parser::State::from_sexp_factory(rust_parser::SexpFactory::new());
                                  let result = parser.process_all(input_mach).unwrap();
                                  black_box(result)
                              }));
         group.bench_function("rust-tape",
                              |b| b.iter(|| {
-                                 let mut parser = parser::State::new(rust_parser::TapeVisitor::new());
+                                 let mut parser = parser::State::from_visitor(rust_parser::TapeVisitor::new());
                                  let result = parser.process_all(input_mach).unwrap();
                                  black_box(result)
                              }));
