@@ -156,7 +156,6 @@ impl<'a> parser::Stage2 for SelectStage2<'a> {
 
         let ch = input.input[this_index - input.offset];
         match ch {
-            b'(' => (),
             b')' => {
                 match self.stack[self.stack_pointer as usize] {
                     SelectStage2Context::Selected(key_id, start_offset) => {
@@ -193,19 +192,23 @@ impl<'a> parser::Stage2 for SelectStage2<'a> {
                         self.stack[self.stack_pointer as usize] = SelectStage2Context::Ignore;
                     },
                     SelectStage2Context::Start => {
-                        let mut buf = [0u8; 64];
-                        let key_id =
-                            if ch == b'"' {
-                                self.unescape.unescape(
-                                    &input.input[(this_index - input.offset)..std::cmp::min(next_index, this_index - input.offset + 64)],
-                                    &mut buf[..])
-                                    .and_then(|(_, output_len)| self.select_tree.get(&buf[..output_len])).map(|x| *x)
-                            } else {
-                                self.select_tree.get(&input.input[(this_index - input.offset)..(next_index - input.offset)]).map(|x| *x)
-                            };
-                        self.stack[self.stack_pointer as usize] = match key_id {
-                            None => SelectStage2Context::Ignore,
-                            Some(key_id) => SelectStage2Context::SelectNext(key_id),
+                        if ch == b'(' {
+                            self.stack[self.stack_pointer as usize] = SelectStage2Context::Ignore;
+                        } else {
+                            let mut buf = [0u8; 64];
+                            let key_id =
+                                if ch == b'"' {
+                                    self.unescape.unescape(
+                                        &input.input[(this_index - input.offset)..std::cmp::min(next_index, this_index - input.offset + 64)],
+                                        &mut buf[..])
+                                        .and_then(|(_, output_len)| self.select_tree.get(&buf[..output_len])).map(|x| *x)
+                                } else {
+                                    self.select_tree.get(&input.input[(this_index - input.offset)..(next_index - input.offset)]).map(|x| *x)
+                                };
+                            self.stack[self.stack_pointer as usize] = match key_id {
+                                None => SelectStage2Context::Ignore,
+                                Some(key_id) => SelectStage2Context::SelectNext(key_id),
+                            }
                         }
                     },
                     _ => (),
@@ -213,15 +216,15 @@ impl<'a> parser::Stage2 for SelectStage2<'a> {
             },
         }
 
-        if self.stack_pointer == 0 && self.has_output {
-            self.stdout.write(&b")\n"[..]).unwrap();
-            self.has_output = false;
-        }
-
         self.input_index_to_keep = if self.stack_pointer == 0 { next_index as u32 } else { self.input_index_to_keep };
 
         self.stack_pointer += (ch == b'(') as i32;
         self.stack_pointer -= (ch == b')') as i32;
+
+        if self.stack_pointer == 0 && self.has_output {
+            self.stdout.write(&b")\n"[..]).unwrap();
+            self.has_output = false;
+        }
 
         assert!((self.stack_pointer as usize) < self.stack.len(), "Too deeply nested");
         if unlikely(self.stack_pointer < 0) {
