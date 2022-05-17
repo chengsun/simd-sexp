@@ -112,13 +112,15 @@ enum SelectStage2Context {
 }
 
 struct SelectStage2<'a> {
-    labeled: bool,
-
+    // varying
     stack_pointer: i8,
 
     stack: [SelectStage2Context; 64],
-    first_interesting_stack_pointer: i8,
+    input_index_to_keep: u32,
+    has_output: bool,
 
+    // static
+    labeled: bool,
     select_tree: BTreeMap<&'a [u8], u16>,
     select_vec: Vec<&'a [u8]>,
     stdout: std::io::StdoutLock<'a>,
@@ -133,10 +135,11 @@ impl<'a> SelectStage2<'a> {
             select_tree.insert(key, key_id.try_into().unwrap());
         }
         Self {
-            labeled,
             stack_pointer: 0i8,
             stack: [SelectStage2Context::Start; 64],
-            first_interesting_stack_pointer: -1i8,
+            input_index_to_keep: 0,
+            has_output: false,
+            labeled,
             select_tree,
             select_vec,
             stdout,
@@ -162,18 +165,19 @@ impl<'a> parser::Stage2 for SelectStage2<'a> {
                         let value = &input.input[(start_offset as usize - input.offset)..(this_index as usize - input.offset)];
                         if self.labeled {
                             self.stdout.write_vectored(&[
-                                IoSlice::new(&b"("[..]),
+                                IoSlice::new(&b"(("[(self.has_output as usize)..]),
                                 IoSlice::new(&key[..]),
                                 IoSlice::new(&b" "[..]),
                                 IoSlice::new(&value[..]),
-                                IoSlice::new(&b")\n"[..]),
+                                IoSlice::new(&b")"[..]),
                             ]).unwrap();
                         } else {
                             self.stdout.write_vectored(&[
+                                IoSlice::new(if self.has_output { &b" "[..] } else { &b"("[..] }),
                                 IoSlice::new(&value[..]),
-                                IoSlice::new(&b"\n"[..]),
                             ]).unwrap();
                         }
+                        self.has_output = true;
                     },
                     _ => (),
                 }
@@ -184,15 +188,9 @@ impl<'a> parser::Stage2 for SelectStage2<'a> {
                 match self.stack[self.stack_pointer as usize] {
                     SelectStage2Context::SelectNext(key_id) => {
                         self.stack[self.stack_pointer as usize] = SelectStage2Context::Selected(key_id, this_index.try_into().unwrap());
-                        if self.first_interesting_stack_pointer < 0 {
-                            self.first_interesting_stack_pointer = self.stack_pointer;
-                        }
                     },
                     SelectStage2Context::Selected(_, _) => {
                         self.stack[self.stack_pointer as usize] = SelectStage2Context::Ignore;
-                        if self.first_interesting_stack_pointer == self.stack_pointer {
-                            self.first_interesting_stack_pointer = -1;
-                        }
                     },
                     SelectStage2Context::Start => {
                         let mut buf = [0u8; 64];
@@ -214,34 +212,23 @@ impl<'a> parser::Stage2 for SelectStage2<'a> {
                 }
             },
         }
+
+        if self.stack_pointer == 0 && self.has_output {
+            self.stdout.write(&b")\n"[..]).unwrap();
+            self.has_output = false;
+        }
+
+        self.input_index_to_keep = if self.stack_pointer == 0 { next_index as u32 } else { self.input_index_to_keep };
+
         self.stack_pointer += (ch == b'(') as i8;
         self.stack_pointer -= (ch == b')') as i8;
-
-        self.first_interesting_stack_pointer =
-            if self.stack_pointer < self.first_interesting_stack_pointer {
-                -1i8
-            } else {
-                self.first_interesting_stack_pointer
-            };
 
         assert!((self.stack_pointer as usize) < self.stack.len(), "Too deeply nested");
         if unlikely(self.stack_pointer < 0) {
             return Err(parser::Error::UnmatchedCloseParen);
         }
 
-        let input_index_to_keep =
-            if self.first_interesting_stack_pointer < 0 {
-                next_index
-            } else {
-                match self.stack[self.first_interesting_stack_pointer as usize] {
-                    SelectStage2Context::Selected(_, start_offset) => {
-                        start_offset as usize
-                    },
-                    state => panic!("unexpected state for interesting stack pointer: {:?}", state),
-                }
-            };
-
-        Ok(input_index_to_keep)
+        Ok(self.input_index_to_keep as usize)
     }
 
     fn process_eof(&mut self) -> Result<Self::FinalReturnType, parser::Error> {
