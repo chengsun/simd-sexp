@@ -2,7 +2,7 @@ use crate::escape::{self, Unescape};
 use crate::parser;
 use crate::utils::unlikely;
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{IoSlice, Write};
+use std::io::Write;
 
 pub struct SelectVisitor<'a, StdoutT> {
     select: BTreeSet<&'a [u8]>,
