@@ -19,9 +19,17 @@ pub trait Visitor {
     fn eof(&mut self) -> Self::FinalReturnType;
 }
 
+#[derive(Copy, Clone)]
+pub struct Input<'a> {
+    offset: usize,
+    input: &'a [u8],
+}
+
 pub trait Stage2 {
     type FinalReturnType;
-    fn process_one(&mut self, input: &[u8], this_index: usize, next_index: usize) -> Result<(), Error>;
+
+    fn process_one(&mut self, input: Input, this_index: usize, next_index: usize) -> Result<(), Error>;
+
     fn process_eof(&mut self) -> Result<Self::FinalReturnType, Error>;
 }
 
@@ -89,8 +97,8 @@ impl<VisitorT: Visitor> Stage2 for VisitorState<VisitorT> {
     type FinalReturnType = VisitorT::FinalReturnType;
 
     #[inline(always)]
-    fn process_one(&mut self, input: &[u8], this_index: usize, next_index: usize) -> Result<(), Error> {
-        match input[this_index] {
+    fn process_one(&mut self, input: Input, this_index: usize, next_index: usize) -> Result<(), Error> {
+        match input.input[this_index - input.offset] {
             b'(' => {
                 let new_context = self.visitor.list_open(self.context_stack.last_mut());
                 self.context_stack.push(new_context);
@@ -109,7 +117,8 @@ impl<VisitorT: Visitor> Stage2 for VisitorState<VisitorT> {
                 let length_upper_bound = end_index - start_index;
                 let mut atom = self.visitor.atom_reserve(length_upper_bound);
                 let (_input_consumed, atom_string_len) =
-                    self.unescape.unescape(&input[start_index..], self.visitor.atom_borrow(&mut atom))
+                    self.unescape.unescape(&input.input[(start_index - input.offset)..],
+                                           self.visitor.atom_borrow(&mut atom))
                     .ok_or(Error::InvalidEscape)?;
                 self.visitor.atom(atom, atom_string_len, self.context_stack.last_mut());
             },
@@ -119,7 +128,10 @@ impl<VisitorT: Visitor> Stage2 for VisitorState<VisitorT> {
                     let mut atom = self.visitor.atom_reserve(length);
                     {
                         let output = self.visitor.atom_borrow(&mut atom);
-                        unsafe { std::ptr::copy_nonoverlapping(&input[this_index] as *const u8, &mut output[0] as *mut u8, length) };
+                        unsafe { std::ptr::copy_nonoverlapping(
+                            &input.input[this_index - input.offset] as *const u8,
+                            &mut output[0] as *mut u8,
+                            length) };
                     }
                     self.visitor.atom(atom, length, self.context_stack.last_mut());
                 }
@@ -228,9 +240,9 @@ impl<Stage2T: Stage2> State<Stage2T> {
 
             for indices_index in 0..(indices_len.saturating_sub(1)) {
                 self.stage2.process_one(
-                    &input[..],
-                    indices_buffer[indices_index] - input_start_index,
-                    indices_buffer[indices_index + 1] - input_start_index)?;
+                    Input { input: &input[..], offset: input_start_index },
+                    indices_buffer[indices_index],
+                    indices_buffer[indices_index + 1])?;
             }
 
             if unlikely(input_index - input_start_index >= input.len()) {
@@ -238,9 +250,9 @@ impl<Stage2T: Stage2> State<Stage2T> {
                     Ok(&[]) => {
                         if indices_len > 0 {
                             self.stage2.process_one(
-                                &input[..],
-                                indices_buffer[indices_len - 1] - input_start_index,
-                                input.len())?;
+                                Input { input: &input[..], offset: input_start_index },
+                                indices_buffer[indices_len - 1],
+                                input.len() + input_start_index)?;
                         }
                         return self.stage2.process_eof();
                     },
@@ -298,12 +310,12 @@ impl<Stage2T: Stage2> State<Stage2T> {
                 });
 
             for indices_index in 0..(indices_len.saturating_sub(1)) {
-                self.stage2.process_one(input, indices_buffer[indices_index], indices_buffer[indices_index + 1])?;
+                self.stage2.process_one(Input { input, offset: 0 }, indices_buffer[indices_index], indices_buffer[indices_index + 1])?;
             }
 
             if input_index >= input.len() {
                 if indices_len > 0 {
-                    self.stage2.process_one(input, indices_buffer[indices_len - 1], input.len())?;
+                    self.stage2.process_one(Input { input, offset: 0 }, indices_buffer[indices_len - 1], input.len())?;
                 }
                 return self.stage2.process_eof();
             }
