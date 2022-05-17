@@ -121,7 +121,7 @@ impl Tape {
         Ok(())
     }
 
-    fn process<VisitorT: parser::Visitor>(&self, visitor: &mut VisitorT) {
+    pub fn process<VisitorT: parser::Visitor>(&self, visitor: &mut VisitorT) {
         let mut i = 0usize;
         let mut list_ends: Vec<(usize, VisitorT::Context)> = Vec::new();
         loop {
