@@ -113,7 +113,7 @@ enum SelectStage2Context {
 
 struct SelectStage2<'a> {
     // varying
-    stack_pointer: i8,
+    stack_pointer: i32,
 
     stack: [SelectStage2Context; 64],
     input_index_to_keep: u32,
@@ -135,7 +135,7 @@ impl<'a> SelectStage2<'a> {
             select_tree.insert(key, key_id.try_into().unwrap());
         }
         Self {
-            stack_pointer: 0i8,
+            stack_pointer: 0,
             stack: [SelectStage2Context::Start; 64],
             input_index_to_keep: 0,
             has_output: false,
@@ -220,8 +220,8 @@ impl<'a> parser::Stage2 for SelectStage2<'a> {
 
         self.input_index_to_keep = if self.stack_pointer == 0 { next_index as u32 } else { self.input_index_to_keep };
 
-        self.stack_pointer += (ch == b'(') as i8;
-        self.stack_pointer -= (ch == b')') as i8;
+        self.stack_pointer += (ch == b'(') as i32;
+        self.stack_pointer -= (ch == b')') as i32;
 
         assert!((self.stack_pointer as usize) < self.stack.len(), "Too deeply nested");
         if unlikely(self.stack_pointer < 0) {
