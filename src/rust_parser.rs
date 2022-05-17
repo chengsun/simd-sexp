@@ -1,4 +1,4 @@
-use crate::{utils, visitor, rust_generator};
+use crate::{visitor, rust_generator};
 
 pub enum Sexp {
     Atom(Vec<u8>),
@@ -75,36 +75,46 @@ impl visitor::SexpFactory for SexpFactory {
 }
 
 /**
-Atom: <len*2 as u32>string
+Atom: <len*2 as u32><offset as u32>
 List: <len*2+1 as u32>Repr(X1)Repr(X2)...
 */
 
 #[derive(Default)]
-pub struct Tape(pub Vec<u8>);
+pub struct Tape {
+    pub tape: Vec<u32>,
+    pub atoms: Vec<u8>,
+}
+
+impl Tape {
+    fn new() -> Self {
+        Self {
+            tape: Vec::new(),
+            atoms: Vec::new(),
+        }
+    }
+}
 
 impl visitor::ReadVisitable for Tape {
     fn visit<VisitorT: visitor::ReadVisitor>(&self, visitor: &mut VisitorT) {
         let mut i = 0usize;
         let mut list_ends: Vec<usize> = Vec::new();
         visitor.bof();
-        loop {
-            while list_ends.last() == Some(&i) {
-                list_ends.pop().unwrap();
-                visitor.list_close();
-            }
-            if i >= self.0.len() {
-                break;
-            }
-            let x = utils::read_u32(&self.0[i..]);
-            i += 4;
+        while i < self.tape.len() {
+            let x = self.tape[i];
+            i += 1;
             let is_atom = x % 2 == 0;
             let len = (x / 2) as usize;
             if is_atom {
-                visitor.atom(&self.0[i..(i+len)]);
-                i += len;
+                let y = self.tape[i] as usize;
+                i += 1;
+                visitor.atom(&self.atoms[y..(y + len)]);
             } else {
                 visitor.list_open();
                 list_ends.push(i + len);
+            }
+            while list_ends.last() == Some(&i) {
+                list_ends.pop().unwrap();
+                visitor.list_close();
             }
         }
         debug_assert!(list_ends.is_empty());
@@ -130,7 +140,7 @@ pub struct TapeVisitor {
 impl TapeVisitor {
     pub fn new() -> TapeVisitor {
         Self {
-            tape: Tape(Vec::new()),
+            tape: Tape::new(),
         }
     }
 }
@@ -140,7 +150,7 @@ pub struct TapeVisitorContext {
 }
 
 impl visitor::Visitor for TapeVisitor {
-    type IntermediateAtom = usize;
+    type IntermediateAtom = u32;
     type Context = TapeVisitorContext;
     type FinalReturnType = Tape;
 
@@ -149,26 +159,29 @@ impl visitor::Visitor for TapeVisitor {
 
     #[inline(always)]
     fn atom_reserve(&mut self, length_upper_bound: usize) -> Self::IntermediateAtom {
-        let tape_start_index = self.tape.0.len();
-        self.tape.0.extend((0..(length_upper_bound + 4)).map(|_| 0u8));
-        tape_start_index
+        let atoms_start_index: u32 = self.tape.atoms.len().try_into().unwrap();
+        self.tape.tape.push(0);
+        self.tape.tape.push(atoms_start_index);
+        self.tape.atoms.extend((0..length_upper_bound).map(|_| 0u8));
+        atoms_start_index
     }
 
     #[inline(always)]
-    fn atom_borrow<'a, 'b : 'a>(&'b mut self, tape_start_index: &'a mut Self::IntermediateAtom) -> &'a mut [u8] {
-        &mut self.tape.0[(*tape_start_index + 4)..]
+    fn atom_borrow<'a, 'b : 'a>(&'b mut self, atoms_start_index: &'a mut Self::IntermediateAtom) -> &'a mut [u8] {
+        &mut self.tape.atoms[(*atoms_start_index as usize)..]
     }
 
     #[inline(always)]
-    fn atom(&mut self, tape_start_index: Self::IntermediateAtom, length: usize, _: Option<&mut TapeVisitorContext>) {
-        utils::write_u32(&mut self.tape.0[tape_start_index..], (length * 2).try_into().unwrap());
-        self.tape.0.truncate(tape_start_index + 4 + length);
+    fn atom(&mut self, atoms_start_index: Self::IntermediateAtom, length: usize, _: Option<&mut TapeVisitorContext>) {
+        let tape_len = self.tape.tape.len();
+        self.tape.tape[tape_len - 2] = (length * 2).try_into().unwrap();
+        self.tape.atoms.truncate(atoms_start_index as usize + length);
     }
 
     #[inline(always)]
     fn list_open(&mut self, _: Option<&mut TapeVisitorContext>) -> TapeVisitorContext {
-        let tape_start_index = self.tape.0.len();
-        self.tape.0.extend([0u8; 4]);
+        let tape_start_index = self.tape.tape.len();
+        self.tape.tape.push(0);
         TapeVisitorContext {
             tape_start_index,
         }
@@ -176,8 +189,8 @@ impl visitor::Visitor for TapeVisitor {
 
     #[inline(always)]
     fn list_close(&mut self, context: TapeVisitorContext, _: Option<&mut TapeVisitorContext>) {
-        let x: u32 = ((self.tape.0.len() - context.tape_start_index - 4) * 2 + 1).try_into().unwrap();
-        utils::write_u32(&mut self.tape.0[context.tape_start_index..], x);
+        let x: u32 = ((self.tape.tape.len() - context.tape_start_index - 1) * 2 + 1).try_into().unwrap();
+        self.tape.tape[context.tape_start_index] = x;
     }
 
     #[inline(always)]
