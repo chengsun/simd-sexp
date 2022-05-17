@@ -1,4 +1,4 @@
-use crate::{escape, extract, parser, rust_parser, structural};
+use crate::{escape, extract, parser, rust_parser, structural, visitor};
 
 use ocaml::IntoValue;
 
@@ -81,7 +81,7 @@ impl<'a> OCamlSexpFactory<'a> {
     }
 }
 
-impl<'a> parser::SexpFactory for OCamlSexpFactory<'a> {
+impl<'a> visitor::SexpFactory for OCamlSexpFactory<'a> {
     type Sexp = ocaml::Value;
 
     fn atom(&self, a: Vec<u8>) -> Self::Sexp {
