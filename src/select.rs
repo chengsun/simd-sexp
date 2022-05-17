@@ -159,6 +159,7 @@ impl<'a, StdoutT: Write> parser::Stage2 for SelectStage2<'a, StdoutT> {
     fn process_bof(&mut self, _input_size_hint: Option<usize>) {
     }
 
+    #[inline(always)]
     fn process_one(&mut self, input: parser::Input, this_index: usize, next_index: usize) -> Result<usize, parser::Error> {
         let _: u32 = next_index.try_into().expect("This code currently only supports input up to 4GB in size.");
 
