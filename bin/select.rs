@@ -1,16 +1,15 @@
 use simd_sexp::*;
 use std::collections::BTreeSet;
 use std::io::{stdin, stdout, StdoutLock, Write};
-use std::rc::Rc;
 
 pub struct SelectVisitor<'a> {
-    select: BTreeSet<Rc<[u8]>>,
+    select: BTreeSet<&'a [u8]>,
     stdout: std::io::StdoutLock<'a>,
     atom_buffer: Option<Vec<u8>>,
 }
 
 impl<'a> SelectVisitor<'a> {
-    fn new(select: BTreeSet<Rc<[u8]>>, stdout: StdoutLock<'a>) -> Self {
+    fn new(select: BTreeSet<&'a [u8]>, stdout: StdoutLock<'a>) -> Self {
         Self {
             select,
             stdout,
@@ -19,16 +18,16 @@ impl<'a> SelectVisitor<'a> {
     }
 }
 
-pub enum SelectVisitorContext {
+pub enum SelectVisitorContext<'a> {
     Start,
-    SelectNext(Rc<[u8]>),
-    Selected(Rc<[u8]>, Vec<u8>),
+    SelectNext(&'a [u8]),
+    Selected(&'a [u8], Vec<u8>),
     Ignore,
 }
 
 impl<'c> parser::Visitor for SelectVisitor<'c> {
     type IntermediateAtom = Vec<u8>;
-    type Context = SelectVisitorContext;
+    type Context = SelectVisitorContext<'c>;
     type FinalReturnType = ();
 
     #[inline(always)]
@@ -92,7 +91,7 @@ impl<'c> parser::Visitor for SelectVisitor<'c> {
             SelectVisitorContext::SelectNext(_) |
             SelectVisitorContext::Ignore => (),
             SelectVisitorContext::Selected(_, value) => {
-                println!("{}", String::from_utf8(value).unwrap());
+                self.stdout.write(&value[..]).unwrap();
             },
         };
     }
@@ -107,7 +106,11 @@ fn main() {
 
     args.next();
 
-    let select: BTreeSet<Rc<[u8]>> = args.map(|s| Rc::from(s.as_bytes())).collect();
+    let select_vec: Vec<Vec<u8>> = args.map(|s| s.as_bytes().to_owned()).collect();
+    let mut select: BTreeSet<&[u8]> = BTreeSet::new();
+    for key in select_vec.iter() {
+        select.insert(key);
+    }
 
     let stdin = stdin();
     let mut stdin = stdin.lock();
