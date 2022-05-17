@@ -28,7 +28,8 @@ pub struct Input<'a> {
 pub trait Stage2 {
     type FinalReturnType;
 
-    fn process_one(&mut self, input: Input, this_index: usize, next_index: usize) -> Result<(), Error>;
+    /// Returns the input index that must be preserved for next call.
+    fn process_one(&mut self, input: Input, this_index: usize, next_index: usize) -> Result<usize, Error>;
 
     fn process_eof(&mut self) -> Result<Self::FinalReturnType, Error>;
 }
@@ -97,7 +98,7 @@ impl<VisitorT: Visitor> Stage2 for VisitorState<VisitorT> {
     type FinalReturnType = VisitorT::FinalReturnType;
 
     #[inline(always)]
-    fn process_one(&mut self, input: Input, this_index: usize, next_index: usize) -> Result<(), Error> {
+    fn process_one(&mut self, input: Input, this_index: usize, next_index: usize) -> Result<usize, Error> {
         match input.input[this_index - input.offset] {
             b'(' => {
                 let new_context = self.visitor.list_open(self.context_stack.last_mut());
@@ -137,7 +138,7 @@ impl<VisitorT: Visitor> Stage2 for VisitorState<VisitorT> {
                 }
             }
         }
-        Ok(())
+        Ok(next_index)
     }
 
     fn process_eof(&mut self) -> Result<VisitorT::FinalReturnType, Error> {
@@ -238,11 +239,14 @@ impl<Stage2T: Stage2> State<Stage2T> {
                     }
                 });
 
+            let mut input_index_to_keep = input_start_index;
             for indices_index in 0..(indices_len.saturating_sub(1)) {
-                self.stage2.process_one(
-                    Input { input: &input[..], offset: input_start_index },
-                    indices_buffer[indices_index],
-                    indices_buffer[indices_index + 1])?;
+                input_index_to_keep =
+                    self.stage2.process_one(
+                        Input { input: &input[..], offset: input_start_index },
+                        indices_buffer[indices_index],
+                        indices_buffer[indices_index + 1])?;
+                debug_assert!(input_index_to_keep <= indices_buffer[indices_index + 1]);
             }
 
             if unlikely(input_index - input_start_index >= input.len()) {
@@ -258,7 +262,7 @@ impl<Stage2T: Stage2> State<Stage2T> {
                     },
                     Ok(buf) => {
                         if indices_len > 0 {
-                            let length_to_chop = indices_buffer[indices_len - 1] - input_start_index;
+                            let length_to_chop = input_index_to_keep - input_start_index;
                             let length_to_keep = input.len() - length_to_chop;
                             input_start_index += length_to_chop;
                             unsafe { std::ptr::copy(&input[length_to_chop] as *const u8, &mut input[0] as *mut u8, length_to_keep); }
