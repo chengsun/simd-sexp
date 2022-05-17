@@ -112,7 +112,7 @@ impl<'c, StdoutT: Write> visitor::Visitor for SelectVisitor<'c, StdoutT> {
 enum SelectStage2Context {
     Start,
     SelectNext(u16),
-    Selected(u16, u32),
+    Selected(u16, usize),
     Ignore,
 }
 
@@ -121,7 +121,7 @@ pub struct SelectStage2<'a, StdoutT> {
     stack_pointer: i32,
 
     stack: [SelectStage2Context; 64],
-    input_index_to_keep: u32,
+    input_index_to_keep: usize,
     has_output: bool,
 
     // static
@@ -161,8 +161,6 @@ impl<'a, StdoutT: Write> parser::Stage2 for SelectStage2<'a, StdoutT> {
 
     #[inline(always)]
     fn process_one(&mut self, input: parser::Input, this_index: usize, next_index: usize) -> Result<usize, parser::Error> {
-        let _: u32 = next_index.try_into().expect("This code currently only supports input up to 4GB in size.");
-
         let ch = input.input[this_index - input.offset];
         match ch {
             b')' => {
@@ -170,7 +168,7 @@ impl<'a, StdoutT: Write> parser::Stage2 for SelectStage2<'a, StdoutT> {
                     SelectStage2Context::Selected(key_id, start_offset) => {
                         // TODO: escape key if necessary
                         let key = self.select_vec[key_id as usize];
-                        let value = &input.input[(start_offset as usize - input.offset)..(this_index as usize - input.offset)];
+                        let value = &input.input[(start_offset - input.offset)..(this_index - input.offset)];
                         if self.labeled {
                             self.stdout.write_all(&b"(("[(self.has_output as usize)..]).unwrap();
                             self.stdout.write_all(&key[..]).unwrap();
@@ -191,7 +189,7 @@ impl<'a, StdoutT: Write> parser::Stage2 for SelectStage2<'a, StdoutT> {
             _ => {
                 match self.stack[self.stack_pointer as usize] {
                     SelectStage2Context::SelectNext(key_id) => {
-                        self.stack[self.stack_pointer as usize] = SelectStage2Context::Selected(key_id, this_index.try_into().unwrap());
+                        self.stack[self.stack_pointer as usize] = SelectStage2Context::Selected(key_id, this_index);
                     },
                     SelectStage2Context::Selected(_, _) => {
                         self.stack[self.stack_pointer as usize] = SelectStage2Context::Ignore;
@@ -221,7 +219,7 @@ impl<'a, StdoutT: Write> parser::Stage2 for SelectStage2<'a, StdoutT> {
             },
         }
 
-        self.input_index_to_keep = if self.stack_pointer == 0 { next_index as u32 } else { self.input_index_to_keep };
+        self.input_index_to_keep = if self.stack_pointer == 0 { next_index } else { self.input_index_to_keep };
 
         self.stack_pointer += (ch == b'(') as i32;
         self.stack_pointer -= (ch == b')') as i32;
@@ -236,7 +234,7 @@ impl<'a, StdoutT: Write> parser::Stage2 for SelectStage2<'a, StdoutT> {
             return Err(parser::Error::UnmatchedCloseParen);
         }
 
-        Ok(self.input_index_to_keep as usize)
+        Ok(self.input_index_to_keep)
     }
 
     fn process_eof(&mut self) -> Result<Self::FinalReturnType, parser::Error> {
