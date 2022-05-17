@@ -224,14 +224,14 @@ impl<'a, StdoutT: Write> parser::Stage2 for SelectStage2<'a, StdoutT> {
         self.stack_pointer += (ch == b'(') as i32;
         self.stack_pointer -= (ch == b')') as i32;
 
+        if unlikely(self.stack_pointer < 0) {
+            return Err(parser::Error::UnmatchedCloseParen);
+        }
+        assert!((self.stack_pointer as usize) < self.stack.len(), "Too deeply nested");
+
         if self.stack_pointer == 0 && self.has_output {
             self.stdout.write(&b")\n"[..]).unwrap();
             self.has_output = false;
-        }
-
-        assert!((self.stack_pointer as usize) < self.stack.len(), "Too deeply nested");
-        if unlikely(self.stack_pointer < 0) {
-            return Err(parser::Error::UnmatchedCloseParen);
         }
 
         Ok(self.input_index_to_keep)
