@@ -187,7 +187,7 @@ impl Unescape for GenericUnescape {
 use crate::{vector_classifier::{self, ClassifierBuilder, Classifier}, structural};
 
 #[cfg(test)]
-mod unescape_tests {
+mod tests {
     use super::*;
 
     trait Testable {

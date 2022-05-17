@@ -12,7 +12,7 @@ pub fn find_quote_transitions<ClmulT: clmul::Clmul, XorMaskedAdjacentT: xor_mask
 }
 
 #[cfg(test)]
-mod find_quote_transitions_tests {
+mod tests {
     use super::*;
     use crate::utils::*;
 

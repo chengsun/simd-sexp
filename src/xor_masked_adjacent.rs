@@ -71,7 +71,7 @@ pub fn runtime_detect() -> Box<dyn XorMaskedAdjacent> {
 }
 
 #[cfg(test)]
-mod xor_masked_adjacent_tests {
+mod tests {
     use super::*;
     use crate::utils::*;
 

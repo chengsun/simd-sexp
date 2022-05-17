@@ -73,7 +73,7 @@ pub fn runtime_detect() -> Box<dyn Clmul> {
 }
 
 #[cfg(test)]
-mod clmul_tests {
+mod tests {
     use super::*;
     use crate::utils::*;
 

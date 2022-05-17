@@ -222,8 +222,9 @@ impl visitor::Visitor for TapeVisitor {
 }
 
 #[cfg(test)]
-mod parser_tests {
+mod tests {
     use super::*;
+    use crate::parser;
 
     fn run_test(input: &[u8], expected_output: Result<&str, parser::Error>) {
         let validate = |name: &str, output: Result<String, parser::Error>| {

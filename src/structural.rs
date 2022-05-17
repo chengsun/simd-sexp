@@ -246,7 +246,7 @@ impl Classifier for Avx2 {
 }
 
 #[cfg(test)]
-mod structural_tests {
+mod tests {
     use rand::{prelude::Distribution, SeedableRng};
 
     use super::*;

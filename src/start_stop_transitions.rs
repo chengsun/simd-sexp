@@ -238,7 +238,7 @@ pub unsafe fn stg_asdf(a: u64, bplus: u64, bminus: u64, verbose: bool) -> u64 {
 }
 
 #[cfg(test)]
-mod start_stop_transitions_tests {
+mod tests {
     use super::*;
     use crate::utils::*;
 

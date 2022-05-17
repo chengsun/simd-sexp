@@ -132,7 +132,7 @@ impl Encoder<usize> for GenericEncoder {
 }
 
 #[cfg(test)]
-mod varint_tests {
+mod tests {
     use super::*;
 
     trait Testable {
