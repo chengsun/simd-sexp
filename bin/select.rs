@@ -1,5 +1,5 @@
 use simd_sexp::*;
-use std::io::{stdin, stdout};
+use std::io::stdin;
 
 fn main() {
     let mut args = std::env::args();
@@ -17,9 +17,9 @@ fn main() {
     let mut stdout = std::io::BufWriter::with_capacity(16384, stdout);
 
     /*
-    let mut parser = parser::State::from_visitor(SelectVisitor::new(select, stdout));
+    let mut parser = parser::State::from_visitor(select::SelectVisitor::new(select, &mut stdout));
     let () = parser.process_streaming(&mut stdin).unwrap();
-     */
+    */
 
     let mut parser = parser::State::new(select::SelectStage2::new(select, &mut stdout, false));
     let () = parser.process_streaming(&mut stdin).unwrap();

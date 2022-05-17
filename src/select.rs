@@ -11,9 +11,9 @@ pub struct SelectVisitor<'a, StdoutT> {
 }
 
 impl<'a, StdoutT> SelectVisitor<'a, StdoutT> {
-    pub fn new(select: BTreeSet<&'a [u8]>, stdout: &'a mut StdoutT) -> Self {
+    pub fn new<T: IntoIterator<Item = &'a [u8]>>(iter: T, stdout: &'a mut StdoutT) -> Self {
         Self {
-            select,
+            select: iter.into_iter().collect(),
             stdout,
             atom_buffer: Some(Vec::with_capacity(128)),
         }
