@@ -85,11 +85,6 @@ List: <len*2+1 as u32>Repr(X1)Repr(X2)...
 #[derive(Default)]
 pub struct Tape(pub Vec<u8>);
 
-pub enum TapeElementHeader {
-    Atom(usize),
-    List(usize),
-}
-
 impl Tape {
     // TODO: rewrite as visitor
     fn fmt_mach(&self, f: &mut std::fmt::Formatter<'_>, space_separator_needed: &mut bool) -> std::fmt::Result {
