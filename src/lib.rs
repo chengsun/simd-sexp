@@ -6,6 +6,7 @@ pub mod find_quote_transitions;
 pub mod ocaml_parser;
 pub mod parser;
 pub mod ranges;
+pub mod rust_generator;
 pub mod rust_parser;
 pub mod select;
 pub mod start_stop_transitions;

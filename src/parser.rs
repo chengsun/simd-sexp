@@ -18,50 +18,7 @@ pub trait Stage2 {
     fn process_eof(&mut self) -> Result<Self::FinalReturnType, Error>;
 }
 
-pub struct SimpleVisitor<SexpFactoryT: SexpFactory> {
-    sexp_factory: SexpFactoryT,
-    sexp_stack: Vec<SexpFactoryT::Sexp>,
-}
-
-impl<SexpFactoryT: SexpFactory> SimpleVisitor<SexpFactoryT> {
-    fn new(sexp_factory: SexpFactoryT) -> Self {
-        SimpleVisitor {
-            sexp_factory,
-            sexp_stack: Vec::new(),
-        }
-    }
-}
-
-impl<SexpFactoryT: SexpFactory> Visitor for SimpleVisitor<SexpFactoryT> {
-    type IntermediateAtom = Vec<u8>;
-    type Context = usize;
-    type FinalReturnType = Vec<SexpFactoryT::Sexp>;
-    fn bof(&mut self, _input_size_hint: Option<usize>) {
-    }
-    fn atom_reserve(&mut self, length_upper_bound: usize) -> Self::IntermediateAtom {
-        (0..length_upper_bound).map(|_| 0u8).collect()
-    }
-    fn atom_borrow<'a, 'b : 'a>(&'b mut self, atom: &'a mut Self::IntermediateAtom) -> &'a mut [u8] {
-        &mut atom[..]
-    }
-    fn atom(&mut self, mut atom: Self::IntermediateAtom, length: usize, _: Option<&mut Self::Context>) {
-        atom.truncate(length);
-        self.sexp_stack.push(self.sexp_factory.atom(atom));
-    }
-    fn list_open(&mut self, _: Option<&mut Self::Context>) -> Self::Context {
-        self.sexp_stack.len()
-    }
-    fn list_close(&mut self, context: Self::Context, _: Option<&mut Self::Context>) {
-        let open_index = context;
-        let inner = self.sexp_stack.split_off(open_index);
-        let sexp = self.sexp_factory.list(inner);
-        self.sexp_stack.push(sexp);
-    }
-    fn eof(&mut self) -> Self::FinalReturnType {
-        std::mem::take(&mut self.sexp_stack)
-    }
-}
-
+/// Adapter for a Visitor to become a Stage2
 pub struct VisitorState<VisitorT: Visitor> {
     visitor: VisitorT,
     context_stack: Vec<VisitorT::Context>,
@@ -69,7 +26,7 @@ pub struct VisitorState<VisitorT: Visitor> {
 }
 
 impl<VisitorT: Visitor> VisitorState<VisitorT> {
-    fn new(visitor: VisitorT) -> Self {
+    pub fn new(visitor: VisitorT) -> Self {
         let unescape = escape::GenericUnescape::new();
 
         Self {

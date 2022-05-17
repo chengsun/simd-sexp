@@ -10,8 +10,7 @@ pub fn escape_is_necessary(input: &[u8]) -> bool {
     false
 }
 
-pub fn escape(input: &[u8]) -> Vec<u8> {
-    let mut output: Vec<u8> = Vec::new();
+pub fn escape<WriterT: std::io::Write>(input: &[u8], output: &mut WriterT) -> Result<(), std::io::Error> {
     fn hex_char(i: u8) -> u8 {
         match i {
             (0..=9) => i + b'0',
@@ -21,17 +20,17 @@ pub fn escape(input: &[u8]) -> Vec<u8> {
     }
     for ch in input {
         match ch {
-            b'"' => output.extend(b"\\\""),
-            b'\\' => output.extend(b"\\\\"),
-            b'\x07' => output.extend(b"\\b"),
-            b'\n' => output.extend(b"\\n"),
-            b'\r' => output.extend(b"\\r"),
-            b'\t' => output.extend(b"\\t"),
-            (0x00..=0x1F) | (0x80..=0xFF) => output.extend([b'\\', b'x', hex_char(ch / 0x10), hex_char(ch % 0x10)]),
-            _ => output.push(*ch),
+            b'"' => output.write_all(b"\\\"")?,
+            b'\\' => output.write_all(b"\\\\")?,
+            b'\x07' => output.write_all(b"\\b")?,
+            b'\n' => output.write_all(b"\\n")?,
+            b'\r' => output.write_all(b"\\r")?,
+            b'\t' => output.write_all(b"\\t")?,
+            (0x00..=0x1F) | (0x80..=0xFF) => output.write_all(&[b'\\', b'x', hex_char(ch / 0x10), hex_char(ch % 0x10)])?,
+            _ => output.write_all(std::slice::from_ref(ch))?,
         }
     }
-    output
+    Ok(())
 }
 
 pub trait Unescape {

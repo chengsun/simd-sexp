@@ -1,9 +1,11 @@
-use crate::{escape, utils, visitor};
+use crate::{escape, utils, visitor, rust_generator};
 
 fn write_atom(f: &mut std::fmt::Formatter<'_>, a: &[u8], space_separator_needed: &mut bool) -> std::fmt::Result {
     if escape::escape_is_necessary(a) {
+        let mut escaped = Vec::new();
+        escape::escape(a, &mut escaped).unwrap();
         write!(f, "\"")?;
-        write!(f, "{}", String::from_utf8(escape::escape(a)).unwrap())?;
+        write!(f, "{}", String::from_utf8(escaped).unwrap())?;
         write!(f, "\"")?;
         *space_separator_needed = false;
     } else {
@@ -86,15 +88,14 @@ List: <len*2+1 as u32>Repr(X1)Repr(X2)...
 pub struct Tape(pub Vec<u8>);
 
 impl Tape {
-    // TODO: rewrite as visitor
-    fn fmt_mach(&self, f: &mut std::fmt::Formatter<'_>, space_separator_needed: &mut bool) -> std::fmt::Result {
+    pub fn process<VisitorT: visitor::ReadVisitor>(&self, visitor: &mut VisitorT) {
         let mut i = 0usize;
         let mut list_ends: Vec<usize> = Vec::new();
+        visitor.bof();
         loop {
             while list_ends.last() == Some(&i) {
-                list_ends.pop();
-                write!(f, ")")?;
-                *space_separator_needed = false;
+                list_ends.pop().unwrap();
+                visitor.list_close();
             }
             if i >= self.0.len() {
                 break;
@@ -104,46 +105,11 @@ impl Tape {
             let is_atom = x % 2 == 0;
             let len = (x / 2) as usize;
             if is_atom {
-                write_atom(f, &self.0[i..(i + len)], space_separator_needed)?;
+                visitor.atom(&self.0[i..(i+len)]);
                 i += len;
             } else {
-                write!(f, "(")?;
-                *space_separator_needed = false;
+                visitor.list_open();
                 list_ends.push(i + len);
-            }
-        }
-        assert!(list_ends.is_empty());
-        Ok(())
-    }
-
-    pub fn process<VisitorT: visitor::Visitor>(&self, visitor: &mut VisitorT) {
-        let mut i = 0usize;
-        let mut list_ends: Vec<(usize, VisitorT::Context)> = Vec::new();
-        loop {
-            while list_ends.last().map(|(size, _)| size) == Some(&i) {
-                let (_, context) = list_ends.pop().unwrap();
-                let parent_context = list_ends.last_mut ().map(|(_, context)| context);
-                visitor.list_close(context, parent_context);
-            }
-            if i >= self.0.len() {
-                break;
-            }
-            let x = utils::read_u32(&self.0[i..]);
-            i += 4;
-            let is_atom = x % 2 == 0;
-            let len = (x / 2) as usize;
-            let parent_context = list_ends.last_mut().map(|(_, context)| context);
-            if is_atom {
-                let mut atom = visitor.atom_reserve(len);
-                {
-                    let output = visitor.atom_borrow(&mut atom);
-                    unsafe { std::ptr::copy_nonoverlapping(&self.0[i] as *const u8, output[0] as *mut u8, len) };
-                }
-                visitor.atom(atom, len, parent_context);
-                i += len;
-            } else {
-                let context = visitor.list_open(parent_context);
-                list_ends.push((i + len, context));
             }
         }
         debug_assert!(list_ends.is_empty());
@@ -154,7 +120,10 @@ impl Tape {
 
 impl std::fmt::Display for Tape {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.fmt_mach(f, &mut false)
+        let mut output = Vec::new();
+        let mut generator = rust_generator::Generator::new(&mut output);
+        self.process(&mut generator);
+        f.write_str(std::str::from_utf8(&output[..]).unwrap())
     }
 }
 
