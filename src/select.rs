@@ -2,16 +2,16 @@ use crate::escape::{self, Unescape};
 use crate::parser;
 use crate::utils::unlikely;
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{IoSlice, StdoutLock, Write};
+use std::io::{IoSlice, Write};
 
-pub struct SelectVisitor<'a> {
+pub struct SelectVisitor<'a, StdoutT> {
     select: BTreeSet<&'a [u8]>,
-    stdout: std::io::StdoutLock<'a>,
+    stdout: &'a mut StdoutT,
     atom_buffer: Option<Vec<u8>>,
 }
 
-impl<'a> SelectVisitor<'a> {
-    pub fn new(select: BTreeSet<&'a [u8]>, stdout: StdoutLock<'a>) -> Self {
+impl<'a, StdoutT> SelectVisitor<'a, StdoutT> {
+    pub fn new(select: BTreeSet<&'a [u8]>, stdout: &'a mut StdoutT) -> Self {
         Self {
             select,
             stdout,
@@ -27,7 +27,7 @@ pub enum SelectVisitorContext<'a> {
     Ignore,
 }
 
-impl<'c> parser::Visitor for SelectVisitor<'c> {
+impl<'c, StdoutT: Write> parser::Visitor for SelectVisitor<'c, StdoutT> {
     type IntermediateAtom = Vec<u8>;
     type Context = SelectVisitorContext<'c>;
     type FinalReturnType = ();
@@ -93,7 +93,8 @@ impl<'c> parser::Visitor for SelectVisitor<'c> {
             SelectVisitorContext::SelectNext(_) |
             SelectVisitorContext::Ignore => (),
             SelectVisitorContext::Selected(_, value) => {
-                self.stdout.write_vectored(&[IoSlice::new(&value[..]), IoSlice::new(&b"\n"[..])]).unwrap();
+                self.stdout.write_all(&value[..]).unwrap();
+                self.stdout.write_all(&b"\n"[..]).unwrap();
             },
         };
     }
@@ -111,7 +112,7 @@ enum SelectStage2Context {
     Ignore,
 }
 
-pub struct SelectStage2<'a> {
+pub struct SelectStage2<'a, StdoutT> {
     // varying
     stack_pointer: i32,
 
@@ -123,12 +124,12 @@ pub struct SelectStage2<'a> {
     labeled: bool,
     select_tree: BTreeMap<&'a [u8], u16>,
     select_vec: Vec<&'a [u8]>,
-    stdout: std::io::StdoutLock<'a>,
+    stdout: &'a mut StdoutT,
     unescape: escape::GenericUnescape,
 }
 
-impl<'a> SelectStage2<'a> {
-    pub fn new<T: IntoIterator<Item = &'a [u8]>>(iter: T, stdout: StdoutLock<'a>, labeled: bool) -> Self {
+impl<'a, StdoutT> SelectStage2<'a, StdoutT> {
+    pub fn new<T: IntoIterator<Item = &'a [u8]>>(iter: T, stdout: &'a mut StdoutT, labeled: bool) -> Self {
         let select_vec: Vec<&'a [u8]> = iter.into_iter().collect();
         let mut select_tree: BTreeMap<&'a [u8], u16> = BTreeMap::new();
         for (key_id, key) in select_vec.iter().enumerate() {
@@ -148,7 +149,7 @@ impl<'a> SelectStage2<'a> {
     }
 }
 
-impl<'a> parser::Stage2 for SelectStage2<'a> {
+impl<'a, StdoutT: Write> parser::Stage2 for SelectStage2<'a, StdoutT> {
     type FinalReturnType = ();
 
     fn process_one(&mut self, input: parser::Input, this_index: usize, next_index: usize) -> Result<usize, parser::Error> {
@@ -163,18 +164,14 @@ impl<'a> parser::Stage2 for SelectStage2<'a> {
                         let key = self.select_vec[key_id as usize];
                         let value = &input.input[(start_offset as usize - input.offset)..(this_index as usize - input.offset)];
                         if self.labeled {
-                            self.stdout.write_vectored(&[
-                                IoSlice::new(&b"(("[(self.has_output as usize)..]),
-                                IoSlice::new(&key[..]),
-                                IoSlice::new(&b" "[..]),
-                                IoSlice::new(&value[..]),
-                                IoSlice::new(&b")"[..]),
-                            ]).unwrap();
+                            self.stdout.write_all(&b"(("[(self.has_output as usize)..]).unwrap();
+                            self.stdout.write_all(&key[..]).unwrap();
+                            self.stdout.write_all(&b" "[..]).unwrap();
+                            self.stdout.write_all(&value[..]).unwrap();
+                            self.stdout.write_all(&b")"[..]).unwrap();
                         } else {
-                            self.stdout.write_vectored(&[
-                                IoSlice::new(if self.has_output { &b" "[..] } else { &b"("[..] }),
-                                IoSlice::new(&value[..]),
-                            ]).unwrap();
+                            self.stdout.write_all(if self.has_output { &b" "[..] } else { &b"("[..] }).unwrap();
+                            self.stdout.write_all(&value[..]).unwrap();
                         }
                         self.has_output = true;
                     },

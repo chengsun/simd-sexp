@@ -11,14 +11,16 @@ fn main() {
 
     let stdin = stdin();
     let mut stdin = stdin.lock();
-    let stdout = stdout();
-    let stdout = stdout.lock();
+
+    use std::os::unix::io::FromRawFd;
+    let stdout = unsafe { std::fs::File::from_raw_fd(1) };
+    let mut stdout = std::io::BufWriter::with_capacity(16384, stdout);
 
     /*
     let mut parser = parser::State::from_visitor(SelectVisitor::new(select, stdout));
     let () = parser.process_streaming(&mut stdin).unwrap();
      */
 
-    let mut parser = parser::State::new(select::SelectStage2::new(select, stdout, false));
+    let mut parser = parser::State::new(select::SelectStage2::new(select, &mut stdout, false));
     let () = parser.process_streaming(&mut stdin).unwrap();
 }
