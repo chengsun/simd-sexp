@@ -11,6 +11,7 @@ pub trait Visitor {
     type IntermediateAtom;
     type Context;
     type FinalReturnType;
+    fn bof(&mut self, input_size_hint: Option<usize>);
     fn atom_reserve(&mut self, length_upper_bound: usize) -> Self::IntermediateAtom;
     fn atom_borrow<'a, 'b : 'a>(&'b mut self, atom: &'a mut Self::IntermediateAtom) -> &'a mut [u8];
     fn atom(&mut self, atom: Self::IntermediateAtom, length: usize, parent_context: Option<&mut Self::Context>);
@@ -28,6 +29,7 @@ pub struct Input<'a> {
 pub trait Stage2 {
     type FinalReturnType;
 
+    fn process_bof(&mut self, input_size_hint: Option<usize>);
     /// Returns the input index that must be preserved for next call.
     fn process_one(&mut self, input: Input, this_index: usize, next_index: usize) -> Result<usize, Error>;
 
@@ -52,6 +54,8 @@ impl<SexpFactoryT: SexpFactory> Visitor for SimpleVisitor<SexpFactoryT> {
     type IntermediateAtom = Vec<u8>;
     type Context = usize;
     type FinalReturnType = Vec<SexpFactoryT::Sexp>;
+    fn bof(&mut self, _input_size_hint: Option<usize>) {
+    }
     fn atom_reserve(&mut self, length_upper_bound: usize) -> Self::IntermediateAtom {
         (0..length_upper_bound).map(|_| 0u8).collect()
     }
@@ -96,6 +100,10 @@ impl<VisitorT: Visitor> VisitorState<VisitorT> {
 
 impl<VisitorT: Visitor> Stage2 for VisitorState<VisitorT> {
     type FinalReturnType = VisitorT::FinalReturnType;
+
+    fn process_bof(&mut self, input_size_hint: Option<usize>) {
+        self.visitor.bof(input_size_hint);
+    }
 
     #[inline(always)]
     fn process_one(&mut self, input: Input, this_index: usize, next_index: usize) -> Result<usize, Error> {
@@ -211,6 +219,8 @@ impl<Stage2T: Stage2> State<Stage2T> {
         let mut input_start_index = 0;
         let mut input;
 
+        self.stage2.process_bof(None);
+
         match buf_reader.fill_buf() {
             Ok(&[]) => { return self.stage2.process_eof(); },
             Ok(buf) => {
@@ -295,6 +305,8 @@ impl<Stage2T: Stage2> State<Stage2T> {
         let mut input_index = 0;
         let mut indices_len = 0;
         let mut indices_buffer = [0; INDICES_BUFFER_MAX_LEN];
+
+        self.stage2.process_bof(Some(input.len()));
 
         loop {
             self.structural_classifier.structural_indices_bitmask(

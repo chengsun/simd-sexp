@@ -184,6 +184,9 @@ impl parser::Visitor for TapeVisitor {
     type Context = TapeVisitorContext;
     type FinalReturnType = Tape;
 
+    fn bof(&mut self, _input_size_hint: Option<usize>) {
+    }
+
     #[inline(always)]
     fn atom_reserve(&mut self, length_upper_bound: usize) -> Self::IntermediateAtom {
         let tape_start_index = self.tape.0.len();

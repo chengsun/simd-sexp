@@ -32,6 +32,9 @@ impl<'c, StdoutT: Write> parser::Visitor for SelectVisitor<'c, StdoutT> {
     type Context = SelectVisitorContext<'c>;
     type FinalReturnType = ();
 
+    fn bof(&mut self, _input_size_hint: Option<usize>) {
+    }
+
     #[inline(always)]
     fn atom_reserve(&mut self, length_upper_bound: usize) -> Self::IntermediateAtom {
         let mut atom_buffer = self.atom_buffer.take().unwrap();
@@ -151,6 +154,9 @@ impl<'a, StdoutT> SelectStage2<'a, StdoutT> {
 
 impl<'a, StdoutT: Write> parser::Stage2 for SelectStage2<'a, StdoutT> {
     type FinalReturnType = ();
+
+    fn process_bof(&mut self, _input_size_hint: Option<usize>) {
+    }
 
     fn process_one(&mut self, input: parser::Input, this_index: usize, next_index: usize) -> Result<usize, parser::Error> {
         let _: u32 = next_index.try_into().expect("This code currently only supports input up to 4GB in size.");
