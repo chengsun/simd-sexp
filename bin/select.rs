@@ -1,6 +1,6 @@
 use simd_sexp::*;
 use std::collections::BTreeSet;
-use std::io::{stdin, stdout, StdoutLock, Write};
+use std::io::{stdin, stdout, IoSlice, StdoutLock, Write};
 
 pub struct SelectVisitor<'a> {
     select: BTreeSet<&'a [u8]>,
@@ -91,7 +91,7 @@ impl<'c> parser::Visitor for SelectVisitor<'c> {
             SelectVisitorContext::SelectNext(_) |
             SelectVisitorContext::Ignore => (),
             SelectVisitorContext::Selected(_, value) => {
-                self.stdout.write(&value[..]).unwrap();
+                self.stdout.write_vectored(&[IoSlice::new(&value[..]), IoSlice::new(&b"\n"[..])]).unwrap();
             },
         };
     }
