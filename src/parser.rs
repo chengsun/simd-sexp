@@ -21,8 +21,8 @@ pub trait Visitor {
 
 #[derive(Copy, Clone)]
 pub struct Input<'a> {
-    offset: usize,
-    input: &'a [u8],
+    pub offset: usize,
+    pub input: &'a [u8],
 }
 
 pub trait Stage2 {
