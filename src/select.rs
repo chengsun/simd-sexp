@@ -198,13 +198,18 @@ impl<'a, StdoutT: Write> parser::Stage2 for SelectStage2<'a, StdoutT> {
                         if ch == b'(' {
                             self.stack[self.stack_pointer as usize] = SelectStage2Context::Ignore;
                         } else {
+                            // TODO: this is currently a silent failure in the
+                            // case where an atom (which matches a selected key)
+                            // is represented in the sexp being parsed as more
+                            // than 64 bytes
                             let mut buf = [0u8; 64];
                             let key_id =
                                 if ch == b'"' {
                                     self.unescape.unescape(
                                         &input.input[(this_index - input.offset)..std::cmp::min(next_index, this_index - input.offset + 64)],
                                         &mut buf[..])
-                                        .and_then(|(_, output_len)| self.select_tree.get(&buf[..output_len])).map(|x| *x)
+                                        .and_then(|(_, output_len)| self.select_tree.get(&buf[..output_len]))
+                                        .map(|x| *x)
                                 } else {
                                     self.select_tree.get(&input.input[(this_index - input.offset)..(next_index - input.offset)]).map(|x| *x)
                                 };
