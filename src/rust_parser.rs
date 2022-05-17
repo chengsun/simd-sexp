@@ -1,22 +1,4 @@
-use crate::{escape, utils, visitor, rust_generator};
-
-fn write_atom(f: &mut std::fmt::Formatter<'_>, a: &[u8], space_separator_needed: &mut bool) -> std::fmt::Result {
-    if escape::escape_is_necessary(a) {
-        let mut escaped = Vec::new();
-        escape::escape(a, &mut escaped).unwrap();
-        write!(f, "\"")?;
-        write!(f, "{}", String::from_utf8(escaped).unwrap())?;
-        write!(f, "\"")?;
-        *space_separator_needed = false;
-    } else {
-        if *space_separator_needed {
-            write!(f, " ")?;
-        }
-        write!(f, "{}", std::str::from_utf8(a).unwrap())?;
-        *space_separator_needed = true;
-    }
-    Ok(())
-}
+use crate::{utils, visitor, rust_generator};
 
 pub enum Sexp {
     Atom(Vec<u8>),
@@ -24,20 +6,25 @@ pub enum Sexp {
 }
 
 impl Sexp {
-    fn fmt_mach(&self, f: &mut std::fmt::Formatter<'_>, space_separator_needed: &mut bool) -> std::fmt::Result {
+    fn visit_internal<VisitorT: visitor::ReadVisitor>(&self, visitor: &mut VisitorT) {
         match self {
-            Sexp::Atom(a) => write_atom(f, a, space_separator_needed)?,
+            Sexp::Atom(a) => visitor.atom(a),
             Sexp::List(l) => {
-                write!(f, "(")?;
-                *space_separator_needed = false;
+                visitor.list_open();
                 for s in l.iter() {
-                    s.fmt_mach(f, space_separator_needed)?;
+                    s.visit_internal(visitor);
                 }
-                write!(f, ")")?;
-                *space_separator_needed = false;
+                visitor.list_close();
             }
         }
-        Ok(())
+    }
+}
+
+impl visitor::ReadVisitable for Sexp {
+    fn visit<VisitorT: visitor::ReadVisitor>(&self, visitor: &mut VisitorT) {
+        visitor.bof();
+        self.visit_internal(visitor);
+        visitor.eof();
     }
 }
 
@@ -45,17 +32,25 @@ struct SexpMulti(Vec<Sexp>);
 
 impl std::fmt::Display for Sexp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.fmt_mach(f, &mut false)
+        use visitor::ReadVisitable;
+        let mut output = Vec::new();
+        let mut generator = rust_generator::Generator::new(&mut output);
+        self.visit(&mut generator);
+        f.write_str(std::str::from_utf8(&output[..]).unwrap())
     }
 }
 
 impl std::fmt::Display for SexpMulti {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut space_separator_needed = false;
+        use visitor::ReadVisitor;
+        let mut output = Vec::new();
+        let mut generator = rust_generator::Generator::new(&mut output);
+        generator.bof();
         for s in self.0.iter() {
-            s.fmt_mach(f, &mut space_separator_needed)?;
+            s.visit_internal(&mut generator);
         }
-        Ok(())
+        generator.eof();
+        f.write_str(std::str::from_utf8(&output[..]).unwrap())
     }
 }
 
@@ -87,8 +82,8 @@ List: <len*2+1 as u32>Repr(X1)Repr(X2)...
 #[derive(Default)]
 pub struct Tape(pub Vec<u8>);
 
-impl Tape {
-    pub fn process<VisitorT: visitor::ReadVisitor>(&self, visitor: &mut VisitorT) {
+impl visitor::ReadVisitable for Tape {
+    fn visit<VisitorT: visitor::ReadVisitor>(&self, visitor: &mut VisitorT) {
         let mut i = 0usize;
         let mut list_ends: Vec<usize> = Vec::new();
         visitor.bof();
@@ -120,9 +115,10 @@ impl Tape {
 
 impl std::fmt::Display for Tape {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use visitor::ReadVisitable;
         let mut output = Vec::new();
         let mut generator = rust_generator::Generator::new(&mut output);
-        self.process(&mut generator);
+        self.visit(&mut generator);
         f.write_str(std::str::from_utf8(&output[..]).unwrap())
     }
 }

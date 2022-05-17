@@ -14,6 +14,10 @@ pub trait ReadVisitor {
     fn eof(&mut self);
 }
 
+pub trait ReadVisitable {
+    fn visit<VisitorT: ReadVisitor>(&self, visitor: &mut VisitorT);
+}
+
 /// Visitor for constructing a sexp type by parsing a potentially invalid string
 pub trait Visitor {
     type IntermediateAtom;

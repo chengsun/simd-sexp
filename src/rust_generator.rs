@@ -46,3 +46,10 @@ impl<'a, WriteT: Write> visitor::ReadVisitor for Generator<'a, WriteT> {
     fn eof(&mut self) {
     }
 }
+
+pub fn fmt<SexpT: visitor::ReadVisitable>(f: &mut std::fmt::Formatter<'_>, sexp: &SexpT) -> std::fmt::Result {
+    let mut output = Vec::new();
+    let mut generator = Generator::new(&mut output);
+    sexp.visit(&mut generator);
+    f.write_str(std::str::from_utf8(&output[..]).unwrap())
+}
