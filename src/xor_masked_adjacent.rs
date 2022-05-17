@@ -15,6 +15,7 @@ impl Generic {
 }
 
 impl XorMaskedAdjacent for Generic {
+    #[inline(always)]
     fn xor_masked_adjacent(&self, bitstring: u64, mask: u64, lo_fill: bool) -> u64 {
         let bitstring = bitstring & mask;
         let i1 = mask.wrapping_sub(bitstring << 1);
@@ -40,6 +41,7 @@ impl Bmi2 {
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[target_feature(enable = "bmi2")]
+    #[inline]
     unsafe fn _xor_masked_adjacent(&self, bitstring: u64, mask: u64, lo_fill: bool) -> u64 {
         let d1 = _pext_u64(bitstring, mask);
         let d2 = d1 ^ ((d1 << 1) | (lo_fill as u64));
@@ -48,6 +50,7 @@ impl Bmi2 {
 }
 
 impl XorMaskedAdjacent for Bmi2 {
+    #[inline(always)]
     fn xor_masked_adjacent(&self, bitstring: u64, mask: u64, lo_fill: bool) -> u64 {
         let () = self._feature_detected_witness;
         unsafe {
@@ -57,6 +60,7 @@ impl XorMaskedAdjacent for Bmi2 {
 }
 
 impl XorMaskedAdjacent for Box<dyn XorMaskedAdjacent> {
+    #[inline(always)]
     fn xor_masked_adjacent(&self, bitstring: u64, mask: u64, lo_fill: bool) -> u64 {
         (**self).xor_masked_adjacent(bitstring, mask, lo_fill)
     }
