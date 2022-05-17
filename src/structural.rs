@@ -72,7 +72,7 @@ impl Classifier for Generic {
     fn structural_indices_bitmask<F: FnMut(u64, usize) -> CallbackResult>(&mut self, input_buf: &[u8], mut f: F) {
         for chunk in input_buf.chunks(64) {
             let (result, chunk_len) = self.structural_indices_bitmask_one(chunk);
-            assert!(chunk_len == chunk.len());
+            debug_assert!(chunk_len == chunk.len());
             match f(result, chunk_len) {
                 CallbackResult::Continue => (),
                 CallbackResult::Finish => { return; },
@@ -217,7 +217,7 @@ impl Classifier for Avx2 {
             self.copy_state_to_generic();
             let (bitmask, len) = self.generic.structural_indices_bitmask_one(prefix);
             self.copy_state_from_generic();
-            assert!(len == prefix.len());
+            debug_assert!(len == prefix.len());
             match f(bitmask, len) {
                 CallbackResult::Continue => (),
                 CallbackResult::Finish => { return; },
@@ -236,7 +236,7 @@ impl Classifier for Avx2 {
             self.copy_state_to_generic();
             let (bitmask, len) = self.generic.structural_indices_bitmask_one(suffix);
             self.copy_state_from_generic();
-            assert!(len == suffix.len());
+            debug_assert!(len == suffix.len());
             match f(bitmask, len) {
                 CallbackResult::Continue => (),
                 CallbackResult::Finish => { return; },

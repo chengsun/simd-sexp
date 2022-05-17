@@ -151,7 +151,7 @@ impl Tape {
                 list_ends.push((i + len, context));
             }
         }
-        assert!(list_ends.is_empty());
+        debug_assert!(list_ends.is_empty());
         visitor.eof();
         ()
     }

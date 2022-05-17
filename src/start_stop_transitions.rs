@@ -48,7 +48,7 @@ impl Bmi2 {
     #[target_feature(enable = "bmi2")]
     #[inline]
     unsafe fn _start_stop_transitions(&self, start: u64, stop: u64, prev_state: bool) -> (u64, bool) {
-        assert!(start & stop == 0);
+        debug_assert!(start & stop == 0);
 
         let mask = start | stop;
         let compressed_start = _pext_u64(start, mask);

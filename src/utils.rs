@@ -5,6 +5,7 @@ use core::arch::x86_64::*;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
+#[inline]
 pub unsafe fn make_bitmask(lo: __m256i, hi: __m256i) -> u64 {
     (_mm256_movemask_epi8(lo) as u32 as u64) |
     ((_mm256_movemask_epi8(hi) as u32 as u64) << 32)
@@ -130,7 +131,7 @@ pub fn read_u32(buf: &[u8]) -> u32 {
 
 #[inline]
 pub fn write_u32(buf: &mut [u8], n: u32) {
-    assert!(buf.len() >= 4);
+    debug_assert!(buf.len() >= 4);
     unsafe {
         let bytes = *(&n.to_le() as *const _ as *const [u8; 4]);
         std::ptr::copy_nonoverlapping((&bytes).as_ptr(), buf.as_mut_ptr(), 4);

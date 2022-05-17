@@ -3,7 +3,7 @@ use crate::xor_masked_adjacent;
 
 pub fn find_quote_transitions<ClmulT: clmul::Clmul, XorMaskedAdjacentT: xor_masked_adjacent::XorMaskedAdjacent>
     (clmul: &ClmulT, xor_masked_adjacent: &XorMaskedAdjacentT, unescaped: u64, escaped: u64, prev_state: bool) -> (u64, bool) {
-    assert!(unescaped & escaped == 0);
+    debug_assert!(unescaped & escaped == 0);
     let c = clmul.clmul(unescaped);
     let d = xor_masked_adjacent.xor_masked_adjacent(c, escaped, !prev_state);
     let next_transitions = unescaped | d;

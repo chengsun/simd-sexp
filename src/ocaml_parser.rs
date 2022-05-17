@@ -26,7 +26,7 @@ pub fn ml_extract_structural_indices(
 
     let output_len = output.len();
     let output_data = output.data_mut();
-    assert!(output_index + std::cmp::min(64, input.len() - input_index) <= output_len);
+    debug_assert!(output_index + std::cmp::min(64, input.len() - input_index) <= output_len);
 
     extract_structural_indices_state.as_mut().0.structural_indices_bitmask(&input[input_index..], |bitmask, bitmask_len| {
         extract::safe_generic(|bit_offset| {
