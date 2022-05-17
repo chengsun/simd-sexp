@@ -168,6 +168,7 @@ impl Avx2Classifier {
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[target_feature(enable = "avx,avx2")]
+    #[inline]
     pub unsafe fn classify_avx2(&self, in_out: &mut [__m256i]) {
         let lo_nibble_epi8 = _mm256_set1_epi8(0xF);
 

@@ -29,7 +29,7 @@ fn main() {
         let tape_result = tape_parser.process_all(&input_pp[..]).unwrap();
         println!("Input size:     {}", input_pp.len());
         println!("Of which atoms: {}", sexp_result.iter().map(count_atom_size).sum::<usize>());
-        println!("Tape size:      {}", tape_result.0.len());
+        println!("Tape size:      {}", std::mem::size_of_val(&*tape_result.tape) + std::mem::size_of_val(&*tape_result.atoms));
         println!("# atoms:        {}", sexp_result.iter().map(count_atoms).sum::<usize>());
         println!("# lists:        {}", sexp_result.iter().map(count_lists).sum::<usize>());
     }

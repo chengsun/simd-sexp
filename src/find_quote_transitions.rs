@@ -1,6 +1,7 @@
 use crate::clmul;
 use crate::xor_masked_adjacent;
 
+#[inline(always)]
 pub fn find_quote_transitions<ClmulT: clmul::Clmul, XorMaskedAdjacentT: xor_masked_adjacent::XorMaskedAdjacent>
     (clmul: &ClmulT, xor_masked_adjacent: &XorMaskedAdjacentT, unescaped: u64, escaped: u64, prev_state: bool) -> (u64, bool) {
     debug_assert!(unescaped & escaped == 0);
