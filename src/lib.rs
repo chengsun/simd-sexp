@@ -12,5 +12,6 @@ pub mod start_stop_transitions;
 pub mod structural;
 pub mod utils;
 pub mod varint;
+pub mod visitor;
 pub mod vector_classifier;
 pub mod xor_masked_adjacent;

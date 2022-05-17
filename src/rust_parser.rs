@@ -1,4 +1,4 @@
-use crate::{escape, parser, utils};
+use crate::{escape, utils, visitor};
 
 fn write_atom(f: &mut std::fmt::Formatter<'_>, a: &[u8], space_separator_needed: &mut bool) -> std::fmt::Result {
     if escape::escape_is_necessary(a) {
@@ -65,7 +65,7 @@ impl SexpFactory {
     }
 }
 
-impl parser::SexpFactory for SexpFactory {
+impl visitor::SexpFactory for SexpFactory {
     type Sexp = Sexp;
 
     fn atom(&self, a: Vec<u8>) -> Self::Sexp {
@@ -116,7 +116,7 @@ impl Tape {
         Ok(())
     }
 
-    pub fn process<VisitorT: parser::Visitor>(&self, visitor: &mut VisitorT) {
+    pub fn process<VisitorT: visitor::Visitor>(&self, visitor: &mut VisitorT) {
         let mut i = 0usize;
         let mut list_ends: Vec<(usize, VisitorT::Context)> = Vec::new();
         loop {
@@ -174,7 +174,7 @@ pub struct TapeVisitorContext {
     tape_start_index: usize,
 }
 
-impl parser::Visitor for TapeVisitor {
+impl visitor::Visitor for TapeVisitor {
     type IntermediateAtom = usize;
     type Context = TapeVisitorContext;
     type FinalReturnType = Tape;

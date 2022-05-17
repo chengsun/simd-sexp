@@ -1,6 +1,7 @@
 use crate::escape::{self, Unescape};
 use crate::parser;
 use crate::utils::unlikely;
+use crate::visitor;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 
@@ -27,7 +28,7 @@ pub enum SelectVisitorContext<'a> {
     Ignore,
 }
 
-impl<'c, StdoutT: Write> parser::Visitor for SelectVisitor<'c, StdoutT> {
+impl<'c, StdoutT: Write> visitor::Visitor for SelectVisitor<'c, StdoutT> {
     type IntermediateAtom = Vec<u8>;
     type Context = SelectVisitorContext<'c>;
     type FinalReturnType = ();
