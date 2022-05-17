@@ -183,18 +183,26 @@ impl parser::Visitor for TapeVisitor {
     type IntermediateAtom = usize;
     type Context = TapeVisitorContext;
     type FinalReturnType = Tape;
+
+    #[inline(always)]
     fn atom_reserve(&mut self, length_upper_bound: usize) -> Self::IntermediateAtom {
         let tape_start_index = self.tape.0.len();
         self.tape.0.extend((0..(length_upper_bound + 4)).map(|_| 0u8));
         tape_start_index
     }
+
+    #[inline(always)]
     fn atom_borrow<'a, 'b : 'a>(&'b mut self, tape_start_index: &'a mut Self::IntermediateAtom) -> &'a mut [u8] {
         &mut self.tape.0[(*tape_start_index + 4)..]
     }
+
+    #[inline(always)]
     fn atom(&mut self, tape_start_index: Self::IntermediateAtom, length: usize, _: Option<&mut TapeVisitorContext>) {
         utils::write_u32(&mut self.tape.0[tape_start_index..], (length * 2).try_into().unwrap());
         self.tape.0.truncate(tape_start_index + 4 + length);
     }
+
+    #[inline(always)]
     fn list_open(&mut self, _: Option<&mut TapeVisitorContext>) -> TapeVisitorContext {
         let tape_start_index = self.tape.0.len();
         self.tape.0.extend([0u8; 4]);
@@ -202,10 +210,14 @@ impl parser::Visitor for TapeVisitor {
             tape_start_index,
         }
     }
+
+    #[inline(always)]
     fn list_close(&mut self, context: TapeVisitorContext, _: Option<&mut TapeVisitorContext>) {
         let x: u32 = ((self.tape.0.len() - context.tape_start_index - 4) * 2 + 1).try_into().unwrap();
         utils::write_u32(&mut self.tape.0[context.tape_start_index..], x);
     }
+
+    #[inline(always)]
     fn eof(&mut self) -> Self::FinalReturnType {
         std::mem::take(&mut self.tape)
     }

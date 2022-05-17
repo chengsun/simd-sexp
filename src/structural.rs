@@ -38,6 +38,7 @@ impl Generic {
         }
     }
 
+    #[inline(always)]
     fn structural_indices_bitmask_one(&mut self, input_buf: &[u8]) -> (u64, usize) {
         let chunk_len = std::cmp::min(64, input_buf.len());
         let mut result = 0u64;
@@ -67,6 +68,7 @@ impl Generic {
 impl Classifier for Generic {
     const NAME: &'static str = "Generic";
 
+    #[inline(always)]
     fn structural_indices_bitmask<F: FnMut(u64, usize) -> CallbackResult>(&mut self, input_buf: &[u8], mut f: F) {
         for chunk in input_buf.chunks(64) {
             let (result, chunk_len) = self.structural_indices_bitmask_one(chunk);
@@ -143,6 +145,7 @@ impl Avx2 {
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[target_feature(enable = "avx2,sse2,ssse3,pclmulqdq")]
+    #[inline]
     unsafe fn classify_one_avx2(&self, input: __m256i) -> ClassifyOneAvx2
     {
         let lparen = _mm256_cmpeq_epi8(input, _mm256_set1_epi8('(' as i8));
@@ -166,6 +169,7 @@ impl Avx2 {
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[target_feature(enable = "avx2,sse2,ssse3,pclmulqdq")]
+    #[inline]
     unsafe fn structural_indices_bitmask_one_avx2(&mut self, input_lo: __m256i, input_hi: __m256i) -> u64 {
         let classify_lo = self.classify_one_avx2(input_lo);
         let parens_lo = classify_lo.parens;
@@ -206,6 +210,7 @@ impl Avx2 {
 impl Classifier for Avx2 {
     const NAME: &'static str = "AVX2";
 
+    #[inline(always)]
     fn structural_indices_bitmask<F: FnMut(u64, usize) -> CallbackResult>(&mut self, input_buf: &[u8], mut f: F) {
         let (prefix, aligned, suffix) = unsafe { input_buf.align_to::<(__m256i, __m256i)>() };
         if utils::unlikely(prefix.len() > 0) {
