@@ -3,7 +3,8 @@ use structural::Classifier;
 use std::io::Read;
 
 fn main() {
-    let mut stdin = std::io::stdin().lock();
+    let stdin = std::io::stdin();
+    let mut stdin = stdin.lock();
     let mut input = Vec::new();
     stdin.read_to_end(&mut input).unwrap();
     if input.last() == Some(&b'\n') {
