@@ -246,3 +246,81 @@ impl<'a, StdoutT: Write> parser::Stage2 for SelectStage2<'a, StdoutT> {
         Ok(())
     }
 }
+
+
+#[cfg(feature = "ocaml")]
+mod ocaml_ffi {
+    use super::*;
+    use std::collections::LinkedList;
+    use crate::utils;
+
+    struct ByteString(Vec<u8>);
+
+    unsafe impl<'a> ocaml::FromValue<'a> for ByteString {
+        fn from_value(value: ocaml::Value) -> Self {
+            Self(<&[u8]>::from_value(value).to_owned())
+        }
+    }
+
+    unsafe impl ocaml::IntoValue for ByteString {
+        fn into_value(self, _rt: &ocaml::Runtime) -> ocaml::Value {
+            unsafe { ocaml::Value::bytes(&self.0[..]) }
+        }
+    }
+
+    enum OutputMode {
+        Verbatim,
+        Machine,
+    }
+
+    impl OutputMode {
+        fn verbatim() -> ocaml::Value {
+            unsafe { ocaml::Value::Raw(ocaml::sys::caml_hash_variant(b"Verbatim\0" as *const u8)) }
+        }
+        fn machine() -> ocaml::Value {
+            unsafe { ocaml::Value::Raw(ocaml::sys::caml_hash_variant(b"Machine\0" as *const u8)) }
+        }
+    }
+
+    unsafe impl<'a> ocaml::FromValue<'a> for OutputMode {
+        fn from_value(v: ocaml::Value) -> Self {
+            unsafe {
+                assert!(v.is_long());
+                if v.int_val() == Self::verbatim().int_val() {
+                    OutputMode::Verbatim
+                } else if v .int_val()== Self::machine().int_val() {
+                    OutputMode::Machine
+                } else {
+                    panic!("Unknown variant ({}) for OutputMode", v.int_val());
+                }
+            }
+        }
+    }
+
+    unsafe impl ocaml::IntoValue for OutputMode {
+        fn into_value(self, _rt: &ocaml::Runtime) -> ocaml::Value {
+            match self {
+                OutputMode::Verbatim => Self::verbatim(),
+                OutputMode::Machine => Self::machine(),
+            }
+        }
+    }
+
+    #[ocaml::func]
+    pub fn ml_multi_select(keys: LinkedList<ByteString>, assume_machine_input: bool, output_mode: OutputMode, labeled: bool) {
+        let mut stdin = utils::stdin();
+        let mut stdout = utils::stdout();
+
+        match (assume_machine_input, output_mode, labeled) {
+            (true, OutputMode::Verbatim, labeled) => {
+                let mut parser = parser::State::new(SelectStage2::new(keys.iter().map(|s| &s.0[..]), &mut stdout, labeled));
+                let () = parser.process_streaming(&mut stdin).unwrap();
+            },
+            (false, OutputMode::Machine, false) => {
+                let mut parser = parser::State::from_visitor(SelectVisitor::new(keys.iter().map(|s| &s.0[..]), &mut stdout));
+                let () = parser.process_streaming(&mut stdin).unwrap();
+            },
+            _ => unimplemented!(),
+        }
+    }
+}

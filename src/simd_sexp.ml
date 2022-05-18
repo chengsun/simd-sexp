@@ -171,3 +171,17 @@ let of_string_many_rust_sexp input =
   | Ok sexps -> Array.to_list sexps
   | Error string -> raise_s [%sexp (string : string), [%here]]
 ;;
+
+module Select = struct
+  external _multi_select
+    :  string list
+    -> bool
+    -> [ `Verbatim | `Machine ]
+    -> bool
+    -> unit
+    = "ml_multi_select"
+
+  let multi_select ~select_keys ~assume_machine_input ~output_mode ~labeled =
+    _multi_select select_keys assume_machine_input output_mode labeled
+  ;;
+end

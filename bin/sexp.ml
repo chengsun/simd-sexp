@@ -1,6 +1,6 @@
 open! Core
 
-let parse ~filename =
+let profile ~filename =
   let file_contents = In_channel.read_all filename in
   let start_time = Time_ns.now () in
   let sexps_from_core_sexp = Sexp.of_string_many file_contents in
@@ -28,16 +28,58 @@ let parse ~filename =
   assert_sexp_equality (Sexp.List sexps_from_core_sexp) (Sexp.List sexps_from_simd_sexp)
 ;;
 
-let command =
+let cmd_profile_test =
   Command.basic
-    ~summary:"Parse a sexp"
+    ~summary:"Parse a sexp repeatedly using various functions"
     (let%map_open.Command filename = anon ("FILENAME" %: Filename_unix.arg_type) in
      fun () ->
        let rec loop () =
-         parse ~filename;
+         profile ~filename;
          loop ()
        in
        loop ())
+;;
+
+let cmd_multi_select =
+  Command.basic
+    ~summary:"Select multiple field names"
+    (let%map_open.Command select_keys =
+       anon (non_empty_sequence_as_list ("KEY" %: string))
+     and assume_machine_input =
+       flag
+         "-assume-machine-input"
+         no_arg
+         ~doc:
+           " match keys only if they appear literally in machine format (faster, but not \
+            necessarily true for hand-written sexps)"
+     and output_mode =
+       choose_one
+         ~if_nothing_chosen:(Default_to `Verbatim)
+         [ flag
+             "-verbatim"
+             no_arg
+             ~doc:
+               " output values in exactly the formatting they appear in the input \
+                (default)"
+           |> map ~f:(fun b -> Option.some_if b `Verbatim)
+         ; flag "-machine" no_arg ~doc:" output sexp in machine format"
+           |> map ~f:(fun b -> Option.some_if b `Machine)
+         ]
+     and labeled =
+       flag "-labeled" no_arg ~doc:" label each match with the key that matched it"
+     in
+     fun () ->
+       Simd_sexp.Select.multi_select
+         ~select_keys
+         ~assume_machine_input
+         ~output_mode
+         ~labeled)
+;;
+
+let command =
+  Command.group
+    ~summary:"sexp tool"
+    [ "profile-test", cmd_profile_test; "multi-select", cmd_multi_select ]
 ;;
 
 let () = Command_unix.run command

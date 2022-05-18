@@ -137,3 +137,15 @@ pub fn write_u32(buf: &mut [u8], n: u32) {
         std::ptr::copy_nonoverlapping((&bytes).as_ptr(), buf.as_mut_ptr(), 4);
     }
 }
+
+pub fn stdin() -> std::io::BufReader<std::fs::File> {
+    use std::os::unix::io::FromRawFd;
+    let stdin = unsafe { std::fs::File::from_raw_fd(0) };
+    std::io::BufReader::with_capacity(1048576, stdin)
+}
+
+pub fn stdout() -> std::io::BufWriter<std::fs::File> {
+    use std::os::unix::io::FromRawFd;
+    let stdout = unsafe { std::fs::File::from_raw_fd(1) };
+    std::io::BufWriter::with_capacity(1048576, stdout)
+}

@@ -8,11 +8,8 @@ fn main() {
     let select: Vec<Vec<u8>> = args.map(|s| s.as_bytes().to_owned()).collect();
     let select = select.iter().map(|s| &s[..]);
 
-    use std::os::unix::io::FromRawFd;
-    let stdin = unsafe { std::fs::File::from_raw_fd(0) };
-    let stdout = unsafe { std::fs::File::from_raw_fd(1) };
-    let mut stdin = std::io::BufReader::with_capacity(1048576, stdin);
-    let mut stdout = std::io::BufWriter::with_capacity(1048576, stdout);
+    let mut stdin = utils::stdin();
+    let mut stdout = utils::stdout();
 
     /*
     let mut parser = parser::State::from_visitor(select::SelectVisitor::new(select, &mut stdout));
