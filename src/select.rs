@@ -4,6 +4,7 @@ use crate::utils::unlikely;
 use crate::visitor;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
+use std::ops::Range;
 
 pub struct SelectVisitor<'a, StdoutT> {
     select: BTreeSet<&'a [u8]>,
@@ -116,6 +117,12 @@ enum SelectStage2Context {
     Ignore,
 }
 
+pub enum SelectStage2OutputKind {
+    Values,
+    Labeled,
+    Csv,
+}
+
 pub struct SelectStage2<'a, StdoutT> {
     // varying
     stack_pointer: i32,
@@ -123,9 +130,10 @@ pub struct SelectStage2<'a, StdoutT> {
     stack: [SelectStage2Context; 64],
     input_index_to_keep: usize,
     has_output: bool,
+    output_csv_row: Vec<Range<usize>>,
 
     // static
-    labeled: bool,
+    output_kind: SelectStage2OutputKind,
     select_tree: BTreeMap<&'a [u8], u16>,
     select_vec: Vec<&'a [u8]>,
     stdout: &'a mut StdoutT,
@@ -133,7 +141,7 @@ pub struct SelectStage2<'a, StdoutT> {
 }
 
 impl<'a, StdoutT> SelectStage2<'a, StdoutT> {
-    pub fn new<T: IntoIterator<Item = &'a [u8]>>(iter: T, stdout: &'a mut StdoutT, labeled: bool) -> Self {
+    pub fn new<T: IntoIterator<Item = &'a [u8]>>(iter: T, stdout: &'a mut StdoutT, output_kind: SelectStage2OutputKind) -> Self {
         let select_vec: Vec<&'a [u8]> = iter.into_iter().collect();
         let mut select_tree: BTreeMap<&'a [u8], u16> = BTreeMap::new();
         for (key_id, key) in select_vec.iter().enumerate() {
@@ -144,7 +152,11 @@ impl<'a, StdoutT> SelectStage2<'a, StdoutT> {
             stack: [SelectStage2Context::Start; 64],
             input_index_to_keep: 0,
             has_output: false,
-            labeled,
+            output_csv_row: match output_kind {
+                SelectStage2OutputKind::Csv => select_vec.iter().map(|_| 0..0).collect(),
+                _ => /* this field is unused in this case */ Vec::new(),
+            },
+            output_kind,
             select_tree,
             select_vec,
             stdout,
@@ -157,6 +169,14 @@ impl<'a, StdoutT: Write> parser::Stage2 for SelectStage2<'a, StdoutT> {
     type FinalReturnType = ();
 
     fn process_bof(&mut self, _input_size_hint: Option<usize>) {
+        match self.output_kind {
+            SelectStage2OutputKind::Values | SelectStage2OutputKind::Labeled => (),
+            SelectStage2OutputKind::Csv => {
+                for key in self.select_vec.iter() {
+                    self.stdout.write_all(&key[..]).unwrap();
+                }
+            },
+        }
     }
 
     #[inline(always)]
@@ -169,15 +189,21 @@ impl<'a, StdoutT: Write> parser::Stage2 for SelectStage2<'a, StdoutT> {
                         // TODO: escape key if necessary
                         let key = self.select_vec[key_id as usize];
                         let value = &input.input[(start_offset - input.offset)..(this_index - input.offset)];
-                        if self.labeled {
-                            self.stdout.write_all(&b"(("[(self.has_output as usize)..]).unwrap();
-                            self.stdout.write_all(&key[..]).unwrap();
-                            self.stdout.write_all(&b" "[..]).unwrap();
-                            self.stdout.write_all(&value[..]).unwrap();
-                            self.stdout.write_all(&b")"[..]).unwrap();
-                        } else {
-                            self.stdout.write_all(if self.has_output { &b" "[..] } else { &b"("[..] }).unwrap();
-                            self.stdout.write_all(&value[..]).unwrap();
+                        match self.output_kind {
+                            SelectStage2OutputKind::Csv => {
+                                self.output_csv_row[key_id as usize] = start_offset..this_index;
+                            },
+                            SelectStage2OutputKind::Labeled => {
+                                self.stdout.write_all(&b"(("[(self.has_output as usize)..]).unwrap();
+                                self.stdout.write_all(&key[..]).unwrap();
+                                self.stdout.write_all(&b" "[..]).unwrap();
+                                self.stdout.write_all(&value[..]).unwrap();
+                                self.stdout.write_all(&b")"[..]).unwrap();
+                            },
+                            SelectStage2OutputKind::Values => {
+                                self.stdout.write_all(if self.has_output { &b" "[..] } else { &b"("[..] }).unwrap();
+                                self.stdout.write_all(&value[..]).unwrap();
+                            },
                         }
                         self.has_output = true;
                     },
@@ -235,7 +261,18 @@ impl<'a, StdoutT: Write> parser::Stage2 for SelectStage2<'a, StdoutT> {
         assert!((self.stack_pointer as usize) < self.stack.len(), "Too deeply nested");
 
         if self.stack_pointer == 0 && self.has_output {
-            self.stdout.write(&b")\n"[..]).unwrap();
+            match self.output_kind {
+                SelectStage2OutputKind::Csv => {
+                    for range in self.output_csv_row.iter_mut() {
+                        let value = &input.input[(range.start - input.offset)..(range.end - input.offset)];
+                        self.stdout.write_all(&value[..]).unwrap();
+                        *range = 0..0;
+                    }
+                },
+                SelectStage2OutputKind::Labeled | SelectStage2OutputKind::Values => {
+                    self.stdout.write(&b")\n"[..]).unwrap();
+                },
+            }
             self.has_output = false;
         }
 
@@ -268,55 +305,58 @@ mod ocaml_ffi {
         }
     }
 
-    enum OutputMode {
-        Verbatim,
-        Machine,
+    type OutputKind = SelectStage2OutputKind;
+
+    impl OutputKind {
+        fn values() -> ocaml::Value {
+            unsafe { ocaml::Value::Raw(ocaml::sys::caml_hash_variant(b"Values\0" as *const u8)) }
+        }
+        fn labeled() -> ocaml::Value {
+            unsafe { ocaml::Value::Raw(ocaml::sys::caml_hash_variant(b"Labeled\0" as *const u8)) }
+        }
+        fn csv() -> ocaml::Value {
+            unsafe { ocaml::Value::Raw(ocaml::sys::caml_hash_variant(b"Csv\0" as *const u8)) }
+        }
     }
 
-    impl OutputMode {
-        fn verbatim() -> ocaml::Value {
-            unsafe { ocaml::Value::Raw(ocaml::sys::caml_hash_variant(b"Verbatim\0" as *const u8)) }
-        }
-        fn machine() -> ocaml::Value {
-            unsafe { ocaml::Value::Raw(ocaml::sys::caml_hash_variant(b"Machine\0" as *const u8)) }
-        }
-    }
-
-    unsafe impl<'a> ocaml::FromValue<'a> for OutputMode {
+    unsafe impl<'a> ocaml::FromValue<'a> for OutputKind {
         fn from_value(v: ocaml::Value) -> Self {
             unsafe {
                 assert!(v.is_long());
-                if v.int_val() == Self::verbatim().int_val() {
-                    OutputMode::Verbatim
-                } else if v .int_val()== Self::machine().int_val() {
-                    OutputMode::Machine
+                if v.int_val() == Self::values().int_val() {
+                    OutputKind::Values
+                } else if v.int_val()== Self::labeled().int_val() {
+                    OutputKind::Labeled
+                } else if v.int_val()== Self::csv().int_val() {
+                    OutputKind::Csv
                 } else {
-                    panic!("Unknown variant ({}) for OutputMode", v.int_val());
+                    panic!("Unknown variant ({}) for OutputKind", v.int_val());
                 }
             }
         }
     }
 
-    unsafe impl ocaml::IntoValue for OutputMode {
+    unsafe impl ocaml::IntoValue for OutputKind {
         fn into_value(self, _rt: &ocaml::Runtime) -> ocaml::Value {
             match self {
-                OutputMode::Verbatim => Self::verbatim(),
-                OutputMode::Machine => Self::machine(),
+                OutputKind::Values => Self::values(),
+                OutputKind::Labeled => Self::labeled(),
+                OutputKind::Csv => Self::csv(),
             }
         }
     }
 
     #[ocaml::func]
-    pub fn ml_multi_select(keys: LinkedList<ByteString>, assume_machine_input: bool, output_mode: OutputMode, labeled: bool) {
+    pub fn ml_multi_select(keys: LinkedList<ByteString>, assume_machine_input: bool, output_kind: OutputKind) {
         let mut stdin = utils::stdin();
         let mut stdout = utils::stdout();
 
-        match (assume_machine_input, output_mode, labeled) {
-            (true, OutputMode::Verbatim, labeled) => {
-                let mut parser = parser::State::new(SelectStage2::new(keys.iter().map(|s| &s.0[..]), &mut stdout, labeled));
+        match (assume_machine_input, output_kind) {
+            (true, output_kind) => {
+                let mut parser = parser::State::new(SelectStage2::new(keys.iter().map(|s| &s.0[..]), &mut stdout, output_kind));
                 let () = parser.process_streaming(&mut stdin).unwrap();
             },
-            (false, OutputMode::Machine, false) => {
+            (false, OutputKind::Values) => {
                 let mut parser = parser::State::from_visitor(SelectVisitor::new(keys.iter().map(|s| &s.0[..]), &mut stdout));
                 let () = parser.process_streaming(&mut stdin).unwrap();
             },

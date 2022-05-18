@@ -32,7 +32,6 @@ module Select : sig
   val multi_select
     :  select_keys:string list
     -> assume_machine_input:bool
-    -> output_mode:[ `Verbatim | `Machine ]
-    -> labeled:bool
+    -> output_kind:[ `Values | `Labeled | `Csv ]
     -> unit
 end

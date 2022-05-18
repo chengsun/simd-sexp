@@ -52,28 +52,25 @@ let cmd_multi_select =
          ~doc:
            " match keys only if they appear literally in machine format (faster, but not \
             necessarily true for hand-written sexps)"
-     and output_mode =
+     and output_kind =
        choose_one
-         ~if_nothing_chosen:(Default_to `Verbatim)
-         [ flag
-             "-verbatim"
+         ~if_nothing_chosen:(Default_to `Values)
+         [ flag "-values" no_arg ~doc:" output values of matching keys (default)"
+           |> map ~f:(fun b -> Option.some_if b `Values)
+         ; flag
+             "-labeled"
              no_arg
-             ~doc:
-               " output values in exactly the formatting they appear in the input \
-                (default)"
-           |> map ~f:(fun b -> Option.some_if b `Verbatim)
-         ; flag "-machine" no_arg ~doc:" output sexp in machine format"
-           |> map ~f:(fun b -> Option.some_if b `Machine)
+             ~doc:" output values of matching keys labelled with the key that matches it"
+           |> map ~f:(fun b -> Option.some_if b `Labeled)
+         ; flag
+             "-csv"
+             no_arg
+             ~doc:" output values of matching keys in CSV format, with keys as headers"
+           |> map ~f:(fun b -> Option.some_if b `Labeled)
          ]
-     and labeled =
-       flag "-labeled" no_arg ~doc:" label each match with the key that matched it"
      in
      fun () ->
-       Simd_sexp.Select.multi_select
-         ~select_keys
-         ~assume_machine_input
-         ~output_mode
-         ~labeled)
+       Simd_sexp.Select.multi_select ~select_keys ~assume_machine_input ~output_kind)
 ;;
 
 let command =

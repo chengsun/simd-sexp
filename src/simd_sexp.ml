@@ -176,12 +176,11 @@ module Select = struct
   external _multi_select
     :  string list
     -> bool
-    -> [ `Verbatim | `Machine ]
-    -> bool
+    -> [ `Values | `Labeled | `Csv ]
     -> unit
     = "ml_multi_select"
 
-  let multi_select ~select_keys ~assume_machine_input ~output_mode ~labeled =
-    _multi_select select_keys assume_machine_input output_mode labeled
+  let multi_select ~select_keys ~assume_machine_input ~output_kind =
+    _multi_select select_keys assume_machine_input output_kind
   ;;
 end
