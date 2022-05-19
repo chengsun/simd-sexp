@@ -121,7 +121,7 @@ enum SelectStage2Context {
 pub enum SelectStage2OutputKind {
     Values,
     Labeled,
-    Csv,
+    Csv { atoms_as_sexps: bool },
 }
 
 trait SelectStage2Output {
@@ -192,14 +192,16 @@ impl<'a, StdoutT: Write> SelectStage2Output for SelectStage2OutputLabeled<'a, St
 }
 
 pub struct SelectStage2OutputCsv<'a, StdoutT> {
+    atoms_as_sexps: bool,
     has_output_on_line: bool,
     row: Vec<Range<usize>>,
     stdout: &'a mut StdoutT,
 }
 
 impl<'a, StdoutT> SelectStage2OutputCsv<'a, StdoutT> {
-    pub fn new(stdout: &'a mut StdoutT) -> Self {
+    pub fn new(stdout: &'a mut StdoutT, atoms_as_sexps: bool) -> Self {
         Self {
+            atoms_as_sexps,
             has_output_on_line: false,
             row: Vec::new(),
             stdout,
@@ -238,10 +240,24 @@ impl<'a, StdoutT: Write> SelectStage2Output for SelectStage2OutputCsv<'a, Stdout
                 needs_comma = true;
                 if !Range::is_empty(value_range) {
                     let value = &input.input[(value_range.start - input.offset)..(value_range.end - input.offset)];
-                    if escape_csv::escape_is_necessary(value) {
-                        escape_csv::escape(value, self.stdout).unwrap();
+                    if !self.atoms_as_sexps && value[0] == b'\"' {
+                        // quoted atom -> plain string -> quoted CSV. This could be done faster.
+                        let mut plain_string: Vec<u8> = value.iter().map(|_| 0u8).collect();
+                        let (_, plain_string_len) = escape::GenericUnescape::new().unescape(value, &mut plain_string[..]).unwrap();
+                        plain_string.truncate(plain_string_len);
+
+                        let plain_string = &plain_string[..];
+                        if escape_csv::escape_is_necessary(plain_string) {
+                            escape_csv::escape(plain_string, self.stdout).unwrap();
+                        } else {
+                            self.stdout.write_all(plain_string).unwrap();
+                        }
                     } else {
-                        self.stdout.write_all(value).unwrap();
+                        if escape_csv::escape_is_necessary(value) {
+                            escape_csv::escape(value, self.stdout).unwrap();
+                        } else {
+                            self.stdout.write_all(value).unwrap();
+                        }
                     }
                 }
 
@@ -408,10 +424,10 @@ mod ocaml_ffi {
                 assert!(v.is_long());
                 if v.int_val() == Self::values().int_val() {
                     OutputKind::Values
-                } else if v.int_val()== Self::labeled().int_val() {
+                } else if v.int_val() == Self::labeled().int_val() {
                     OutputKind::Labeled
-                } else if v.int_val()== Self::csv().int_val() {
-                    OutputKind::Csv
+                } else if v.int_val() == Self::csv().int_val() {
+                    OutputKind::Csv { atoms_as_sexps: false }
                 } else {
                     panic!("Unknown variant ({}) for OutputKind", v.int_val());
                 }
@@ -424,7 +440,10 @@ mod ocaml_ffi {
             match self {
                 OutputKind::Values => Self::values(),
                 OutputKind::Labeled => Self::labeled(),
-                OutputKind::Csv => Self::csv(),
+                OutputKind::Csv { atoms_as_sexps: false } => Self::csv(),
+                OutputKind::Csv { atoms_as_sexps: true } =>
+                    // TODO
+                    unimplemented!(),
             }
         }
     }
@@ -442,8 +461,8 @@ mod ocaml_ffi {
                     Box::new(parser::State::new(SelectStage2::new(keys, SelectStage2OutputValues::new(&mut stdout)))),
                 (true, SelectStage2OutputKind::Labeled) =>
                     Box::new(parser::State::new(SelectStage2::new(keys, SelectStage2OutputLabeled::new(&mut stdout)))),
-                (true, SelectStage2OutputKind::Csv) =>
-                    Box::new(parser::State::new(SelectStage2::new(keys, SelectStage2OutputCsv::new(&mut stdout)))),
+                (true, SelectStage2OutputKind::Csv { atoms_as_sexps }) =>
+                    Box::new(parser::State::new(SelectStage2::new(keys, SelectStage2OutputCsv::new(&mut stdout, atoms_as_sexps )))),
                 (false, OutputKind::Values) =>
                     Box::new(parser::State::from_visitor(SelectVisitor::new(keys, &mut stdout))),
                 _ => unimplemented!(),
