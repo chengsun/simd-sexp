@@ -3,7 +3,7 @@ use crate::escape_csv;
 use crate::parser;
 use crate::utils::unlikely;
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::ops::Range;
 
 #[derive(Copy, Clone, Debug)]
@@ -139,7 +139,7 @@ impl<'a, StdoutT: Write> Output for OutputCsv<'a, StdoutT> {
                     if !self.atoms_as_sexps && value[0] == b'\"' {
                         // quoted atom -> plain string -> quoted CSV. This could be done faster.
                         let mut plain_string: Vec<u8> = value.iter().map(|_| 0u8).collect();
-                        let (_, plain_string_len) = escape::GenericUnescape::new().unescape(value, &mut plain_string[..]).unwrap();
+                        let (_, plain_string_len) = escape::GenericUnescape::new().unescape(&value[1..], &mut plain_string[..]).unwrap();
                         plain_string.truncate(plain_string_len);
 
                         let plain_string = &plain_string[..];
@@ -234,9 +234,9 @@ impl<'a, OutputT: Output> parser::Stage2 for Stage2<'a, OutputT> {
                             let key_id =
                                 if ch == b'"' {
                                     // TODO: there are a lot of early-outs we could be applying here.
-                                    let mut buf: Vec<u8> = (0..(this_index - input.offset)).map(|_| 0u8).collect();
+                                    let mut buf: Vec<u8> = (0..(next_index - this_index)).map(|_| 0u8).collect();
                                     self.unescape.unescape(
-                                        &input.input[(this_index - input.offset)..std::cmp::min(next_index, this_index - input.offset + 64)],
+                                        &input.input[(this_index + 1 - input.offset)..(next_index - input.offset)],
                                         &mut buf[..])
                                         .and_then(|(_, output_len)| self.select_tree.get(&buf[..output_len]))
                                         .map(|x| *x)
@@ -276,6 +276,18 @@ impl<'a, OutputT: Output> parser::Stage2 for Stage2<'a, OutputT> {
     }
 }
 
+pub fn make_parser<'a, KeysT: IntoIterator<Item = &'a [u8]>, ReadT: BufRead, WriteT: Write>
+    (keys: KeysT, stdout: &'a mut WriteT, assume_machine_input: bool, output_kind: OutputKind)
+    -> Box<dyn parser::StateI<(), ReadT> + 'a> {
+    match (assume_machine_input, output_kind) {
+        (_, OutputKind::Values) =>
+            Box::new(parser::State::new(Stage2::new(keys, OutputValues::new(stdout)))),
+        (_, OutputKind::Labeled) =>
+            Box::new(parser::State::new(Stage2::new(keys, OutputLabeled::new(stdout)))),
+        (_, OutputKind::Csv { atoms_as_sexps }) =>
+            Box::new(parser::State::new(Stage2::new(keys, OutputCsv::new(stdout, atoms_as_sexps)))),
+    }
+}
 
 #[cfg(feature = "ocaml")]
 mod ocaml_ffi {
@@ -346,15 +358,51 @@ mod ocaml_ffi {
 
         let keys = keys.iter().map(|s| &s.0[..]);
 
-        let mut parser: Box<dyn parser::StateI<(), _>> =
-            match (assume_machine_input, output_kind) {
-                (_, OutputKind::Values) =>
-                    Box::new(parser::State::new(Stage2::new(keys, OutputValues::new(&mut stdout)))),
-                (_, OutputKind::Labeled) =>
-                    Box::new(parser::State::new(Stage2::new(keys, OutputLabeled::new(&mut stdout)))),
-                (_, OutputKind::Csv { atoms_as_sexps }) =>
-                    Box::new(parser::State::new(Stage2::new(keys, OutputCsv::new(&mut stdout, atoms_as_sexps )))),
-            };
+        let mut parser = make_parser(keys, &mut stdout, assume_machine_input, output_kind);
         let () = parser.process_streaming(&mut stdin).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run_test(assume_machine_input: bool, output_kind: OutputKind, input: &[u8], keys: &[&[u8]], expected_output: &[u8]) {
+        let mut output = Vec::new();
+        let mut parser = make_parser(keys.iter().map(|x| *x), &mut output, assume_machine_input, output_kind);
+        let () = parser.process_streaming(&mut BufReader::new(input)).unwrap();
+        std::mem::drop(parser);
+
+        assert_eq!(output, expected_output);
+    }
+
+    #[test]
+    fn test_1() {
+        run_test(
+            false,
+            OutputKind::Csv { atoms_as_sexps: false },
+            br#"((foo bar))"#,
+            &[&b"foo"[..]],
+            b"foo\nbar\n")
+    }
+
+    #[test]
+    fn test_2() {
+        run_test(
+            false,
+            OutputKind::Csv { atoms_as_sexps: false },
+            br#"((foo"bar"))"#,
+            &[&b"foo"[..]],
+            b"foo\nbar\n")
+    }
+
+    #[test]
+    fn test_3() {
+        run_test(
+            false,
+            OutputKind::Csv { atoms_as_sexps: false },
+            br#"(("foo"bar))"#,
+            &[&b"foo"[..]],
+            b"foo\nbar\n")
     }
 }

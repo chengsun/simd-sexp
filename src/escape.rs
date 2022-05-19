@@ -34,6 +34,7 @@ pub fn escape<WriterT: std::io::Write>(input: &[u8], output: &mut WriterT) -> Re
 }
 
 pub trait Unescape {
+    /// Expects input not to contain the starting double quote
     /// Consumes all the way up to the next unescaped double quote
     fn unescape(&self, input: &[u8], output: &mut [u8]) -> Option<(usize, usize)>;
 }
