@@ -3,7 +3,7 @@ use crate::escape_csv;
 use crate::parser;
 use crate::utils::unlikely;
 use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, Write};
 use std::ops::Range;
 
 #[derive(Copy, Clone, Debug)]
