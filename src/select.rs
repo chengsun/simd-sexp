@@ -14,6 +14,7 @@ enum State {
     Ignore,
 }
 
+#[derive(Copy, Clone, Debug)]
 pub enum OutputKind {
     Values,
     Labeled,
@@ -373,36 +374,162 @@ mod tests {
         let () = parser.process_streaming(&mut std::io::BufReader::new(input)).unwrap();
         std::mem::drop(parser);
 
-        assert_eq!(output, expected_output);
+        assert_eq!(std::str::from_utf8(&output[..]).unwrap(),
+                   std::str::from_utf8(expected_output).unwrap(),
+                   "assume_machine_input: {}, output_kind: {:?}", assume_machine_input, output_kind);
     }
 
     #[test]
     fn test_1() {
+        let input = br#"((foo bar))"#;
+        let keys = &[&b"foo"[..]];
         run_test(
             false,
             OutputKind::Csv { atoms_as_sexps: false },
-            br#"((foo bar))"#,
-            &[&b"foo"[..]],
-            b"foo\nbar\n")
+            input,
+            keys,
+            br#"foo
+bar
+"#);
+        run_test(
+            false,
+            OutputKind::Csv { atoms_as_sexps: true },
+            input,
+            keys,
+            br#"foo
+bar
+"#);
     }
 
     #[test]
     fn test_2() {
+        let input = br#"((foo"bar"))"#;
+        let keys = &[&b"foo"[..]];
         run_test(
             false,
             OutputKind::Csv { atoms_as_sexps: false },
-            br#"((foo"bar"))"#,
-            &[&b"foo"[..]],
-            b"foo\nbar\n")
+            input,
+            keys,
+            br#"foo
+bar
+"#);
+        run_test(
+            false,
+            OutputKind::Csv { atoms_as_sexps: true },
+            input,
+            keys,
+            br#"foo
+"""bar"""
+"#);
     }
 
     #[test]
     fn test_3() {
+        let input = br#"(("foo"bar))"#;
+        let keys = &[&b"foo"[..]];
         run_test(
             false,
             OutputKind::Csv { atoms_as_sexps: false },
-            br#"(("foo"bar))"#,
-            &[&b"foo"[..]],
-            b"foo\nbar\n")
+            input,
+            keys,
+            br#"foo
+bar
+"#);
+        run_test(
+            false,
+            OutputKind::Csv { atoms_as_sexps: true },
+            input,
+            keys,
+            br#"foo
+bar
+"#);
+    }
+
+    #[test]
+    fn test_4() {
+        let input = br#"((foo"bar\"baz"))"#;
+        let keys = &[&b"foo"[..]];
+        run_test(
+            false,
+            OutputKind::Csv { atoms_as_sexps: false },
+            input,
+            keys,
+            br#"foo
+"bar""baz"
+"#);
+        run_test(
+            false,
+            OutputKind::Csv { atoms_as_sexps: true },
+            input,
+            keys,
+            br#"foo
+"""bar\""baz"""
+"#);
+    }
+
+    #[test]
+    fn test_5() {
+        let input = br#"((foo"bar baz"))"#;
+        let keys = &[&b"foo"[..]];
+        run_test(
+            false,
+            OutputKind::Csv { atoms_as_sexps: false },
+            input,
+            keys,
+            br#"foo
+bar baz
+"#);
+        run_test(
+            false,
+            OutputKind::Csv { atoms_as_sexps: true },
+            input,
+            keys,
+            br#"foo
+"""bar baz"""
+"#);
+    }
+
+    #[test]
+    fn test_6() {
+        let input = br#"((foo bar,baz))"#;
+        let keys = &[&b"foo"[..]];
+        run_test(
+            false,
+            OutputKind::Csv { atoms_as_sexps: false },
+            input,
+            keys,
+            br#"foo
+"bar,baz"
+"#);
+        run_test(
+            false,
+            OutputKind::Csv { atoms_as_sexps: true },
+            input,
+            keys,
+            br#"foo
+"bar,baz"
+"#);
+    }
+
+    #[test]
+    fn test_7() {
+        let input = br#"((foo "bar, baz"))"#;
+        let keys = &[&b"foo"[..]];
+        run_test(
+            false,
+            OutputKind::Csv { atoms_as_sexps: false },
+            input,
+            keys,
+            br#"foo
+"bar, baz"
+"#);
+        run_test(
+            false,
+            OutputKind::Csv { atoms_as_sexps: true },
+            input,
+            keys,
+            br#"foo
+"""bar, baz"""
+"#);
     }
 }
