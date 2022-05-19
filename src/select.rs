@@ -2,113 +2,9 @@ use crate::escape::{self, Unescape};
 use crate::escape_csv;
 use crate::parser;
 use crate::utils::unlikely;
-use crate::visitor;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::ops::Range;
-
-pub struct SelectVisitor<'a, StdoutT> {
-    select: BTreeSet<&'a [u8]>,
-    stdout: &'a mut StdoutT,
-    atom_buffer: Option<Vec<u8>>,
-}
-
-impl<'a, StdoutT> SelectVisitor<'a, StdoutT> {
-    pub fn new<T: IntoIterator<Item = &'a [u8]>>(iter: T, stdout: &'a mut StdoutT) -> Self {
-        Self {
-            select: iter.into_iter().collect(),
-            stdout,
-            atom_buffer: Some(Vec::with_capacity(128)),
-        }
-    }
-}
-
-pub enum SelectVisitorContext<'a> {
-    Start,
-    SelectNext(&'a [u8]),
-    Selected(&'a [u8], Vec<u8>),
-    Ignore,
-}
-
-impl<'c, StdoutT: Write> visitor::Visitor for SelectVisitor<'c, StdoutT> {
-    type IntermediateAtom = Vec<u8>;
-    type Context = SelectVisitorContext<'c>;
-    type FinalReturnType = ();
-
-    fn bof(&mut self, _input_size_hint: Option<usize>) {
-    }
-
-    #[inline(always)]
-    fn atom_reserve(&mut self, length_upper_bound: usize) -> Self::IntermediateAtom {
-        let mut atom_buffer = self.atom_buffer.take().unwrap();
-        atom_buffer.resize(length_upper_bound, 0u8);
-        atom_buffer
-    }
-
-    #[inline(always)]
-    fn atom_borrow<'a, 'b : 'a>(&'b mut self, atom_buffer: &'a mut Self::IntermediateAtom) -> &'a mut [u8] {
-        &mut atom_buffer[..]
-    }
-
-    #[inline(always)]
-    fn atom(&mut self, mut atom_buffer: Self::IntermediateAtom, length: usize, parent_context: Option<&mut Self::Context>) {
-        atom_buffer.truncate(length);
-        match parent_context {
-            None => (),
-            Some(parent_context) => {
-                *parent_context = match parent_context {
-                    SelectVisitorContext::Start =>
-                        match self.select.get(&atom_buffer[..]) {
-                            Some(key) => SelectVisitorContext::SelectNext(key.clone()),
-                            None => SelectVisitorContext::Ignore,
-                        },
-                    SelectVisitorContext::SelectNext(key) => {
-                        SelectVisitorContext::Selected(key.clone(), atom_buffer.clone())
-                    },
-                    SelectVisitorContext::Selected(_, _) => SelectVisitorContext::Ignore,
-                    SelectVisitorContext::Ignore => SelectVisitorContext::Ignore,
-                };
-            },
-        };
-        self.atom_buffer = Some(atom_buffer);
-    }
-
-    #[inline(always)]
-    fn list_open(&mut self, parent_context: Option<&mut Self::Context>) -> Self::Context {
-        match parent_context {
-            None => (),
-            Some(parent_context) => {
-                *parent_context = match *parent_context {
-                    SelectVisitorContext::Start => SelectVisitorContext::Ignore,
-                    SelectVisitorContext::SelectNext(_) => {
-                        // TODO
-                        SelectVisitorContext::Ignore
-                    },
-                    SelectVisitorContext::Selected(_, _) => SelectVisitorContext::Ignore,
-                    SelectVisitorContext::Ignore => SelectVisitorContext::Ignore,
-                };
-            },
-        };
-        SelectVisitorContext::Start
-    }
-
-    #[inline(always)]
-    fn list_close(&mut self, context: Self::Context, _parent_context: Option<&mut Self::Context>) {
-        match context {
-            SelectVisitorContext::Start |
-            SelectVisitorContext::SelectNext(_) |
-            SelectVisitorContext::Ignore => (),
-            SelectVisitorContext::Selected(_, value) => {
-                self.stdout.write_all(&value[..]).unwrap();
-                self.stdout.write_all(&b"\n"[..]).unwrap();
-            },
-        };
-    }
-
-    #[inline(always)]
-    fn eof(&mut self) {
-    }
-}
 
 #[derive(Copy, Clone, Debug)]
 enum SelectStage2Context {
@@ -335,13 +231,10 @@ impl<'a, OutputT: SelectStage2Output> parser::Stage2 for SelectStage2<'a, Output
                         if ch == b'(' {
                             self.stack[self.stack_pointer as usize] = SelectStage2Context::Ignore;
                         } else {
-                            // TODO: this is currently a silent failure in the
-                            // case where an atom (which matches a selected key)
-                            // is represented in the sexp being parsed as more
-                            // than 64 bytes
-                            let mut buf = [0u8; 64];
                             let key_id =
                                 if ch == b'"' {
+                                    // TODO: there are a lot of early-outs we could be applying here.
+                                    let mut buf: Vec<u8> = (0..(this_index - input.offset)).map(|_| 0u8).collect();
                                     self.unescape.unescape(
                                         &input.input[(this_index - input.offset)..std::cmp::min(next_index, this_index - input.offset + 64)],
                                         &mut buf[..])
@@ -457,15 +350,12 @@ mod ocaml_ffi {
 
         let mut parser: Box<dyn parser::StateI<(), _>> =
             match (assume_machine_input, output_kind) {
-                (true, SelectStage2OutputKind::Values) =>
+                (_, SelectStage2OutputKind::Values) =>
                     Box::new(parser::State::new(SelectStage2::new(keys, SelectStage2OutputValues::new(&mut stdout)))),
-                (true, SelectStage2OutputKind::Labeled) =>
+                (_, SelectStage2OutputKind::Labeled) =>
                     Box::new(parser::State::new(SelectStage2::new(keys, SelectStage2OutputLabeled::new(&mut stdout)))),
-                (true, SelectStage2OutputKind::Csv { atoms_as_sexps }) =>
+                (_, SelectStage2OutputKind::Csv { atoms_as_sexps }) =>
                     Box::new(parser::State::new(SelectStage2::new(keys, SelectStage2OutputCsv::new(&mut stdout, atoms_as_sexps )))),
-                (false, OutputKind::Values) =>
-                    Box::new(parser::State::from_visitor(SelectVisitor::new(keys, &mut stdout))),
-                _ => unimplemented!(),
             };
         let () = parser.process_streaming(&mut stdin).unwrap();
     }
