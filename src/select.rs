@@ -370,7 +370,7 @@ mod tests {
     fn run_test(assume_machine_input: bool, output_kind: OutputKind, input: &[u8], keys: &[&[u8]], expected_output: &[u8]) {
         let mut output = Vec::new();
         let mut parser = make_parser(keys.iter().map(|x| *x), &mut output, assume_machine_input, output_kind);
-        let () = parser.process_streaming(&mut BufReader::new(input)).unwrap();
+        let () = parser.process_streaming(&mut std::io::BufReader::new(input)).unwrap();
         std::mem::drop(parser);
 
         assert_eq!(output, expected_output);
