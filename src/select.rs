@@ -1,4 +1,5 @@
 use crate::escape::{self, Unescape};
+use crate::escape_csv;
 use crate::parser;
 use crate::utils::unlikely;
 use crate::visitor;
@@ -215,8 +216,11 @@ impl<'a, StdoutT: Write> SelectStage2Output for SelectStage2OutputCsv<'a, Stdout
                 self.stdout.write_all(&b","[..]).unwrap();
             }
             needs_comma = true;
-            // TODO: CSV escaping
-            self.stdout.write_all(&key[..]).unwrap();
+            if escape_csv::escape_is_necessary(key) {
+                escape_csv::escape(key, self.stdout).unwrap();
+            } else {
+                self.stdout.write_all(&key[..]).unwrap();
+            }
         }
         self.stdout.write_all(&b"\n"[..]).unwrap();
     }
@@ -234,8 +238,11 @@ impl<'a, StdoutT: Write> SelectStage2Output for SelectStage2OutputCsv<'a, Stdout
                 needs_comma = true;
                 if !Range::is_empty(value_range) {
                     let value = &input.input[(value_range.start - input.offset)..(value_range.end - input.offset)];
-                    // TODO: CSV escaping
-                    self.stdout.write_all(&value[..]).unwrap();
+                    if escape_csv::escape_is_necessary(value) {
+                        escape_csv::escape(value, self.stdout).unwrap();
+                    } else {
+                        self.stdout.write_all(value).unwrap();
+                    }
                 }
 
                 *value_range = 0..0;
