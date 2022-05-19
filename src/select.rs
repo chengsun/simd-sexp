@@ -7,37 +7,37 @@ use std::io::Write;
 use std::ops::Range;
 
 #[derive(Copy, Clone, Debug)]
-enum SelectStage2Context {
+enum State {
     Start,
     SelectNext(u16),
     Selected(u16, usize),
     Ignore,
 }
 
-pub enum SelectStage2OutputKind {
+pub enum OutputKind {
     Values,
     Labeled,
     Csv { atoms_as_sexps: bool },
 }
 
-trait SelectStage2Output {
+trait Output {
     fn bof(&mut self, keys: &Vec<&[u8]>);
     fn select(&mut self, keys: &Vec<&[u8]>, key_id: usize, input: &parser::Input, value_range: Range<usize>);
     fn eol(&mut self, input: &parser::Input);
 }
 
-pub struct SelectStage2OutputValues<'a, StdoutT> {
+pub struct OutputValues<'a, StdoutT> {
     has_output_on_line: bool,
     stdout: &'a mut StdoutT,
 }
 
-impl<'a, StdoutT> SelectStage2OutputValues<'a, StdoutT> {
+impl<'a, StdoutT> OutputValues<'a, StdoutT> {
     pub fn new(stdout: &'a mut StdoutT) -> Self {
         Self { has_output_on_line: false, stdout }
     }
 }
 
-impl<'a, StdoutT: Write> SelectStage2Output for SelectStage2OutputValues<'a, StdoutT> {
+impl<'a, StdoutT: Write> Output for OutputValues<'a, StdoutT> {
     fn bof(&mut self, _keys: &Vec<&[u8]>) {
     }
     fn select(&mut self, _keys: &Vec<&[u8]>, _key_id: usize, input: &parser::Input, value_range: Range<usize>) {
@@ -54,18 +54,18 @@ impl<'a, StdoutT: Write> SelectStage2Output for SelectStage2OutputValues<'a, Std
     }
 }
 
-pub struct SelectStage2OutputLabeled<'a, StdoutT> {
+pub struct OutputLabeled<'a, StdoutT> {
     has_output_on_line: bool,
     stdout: &'a mut StdoutT,
 }
 
-impl<'a, StdoutT> SelectStage2OutputLabeled<'a, StdoutT> {
+impl<'a, StdoutT> OutputLabeled<'a, StdoutT> {
     pub fn new(stdout: &'a mut StdoutT) -> Self {
         Self { has_output_on_line: false, stdout }
     }
 }
 
-impl<'a, StdoutT: Write> SelectStage2Output for SelectStage2OutputLabeled<'a, StdoutT> {
+impl<'a, StdoutT: Write> Output for OutputLabeled<'a, StdoutT> {
     fn bof(&mut self, _keys: &Vec<&[u8]>) {
     }
     fn select(&mut self, keys: &Vec<&[u8]>, key_id: usize, input: &parser::Input, value_range: Range<usize>) {
@@ -87,14 +87,14 @@ impl<'a, StdoutT: Write> SelectStage2Output for SelectStage2OutputLabeled<'a, St
     }
 }
 
-pub struct SelectStage2OutputCsv<'a, StdoutT> {
+pub struct OutputCsv<'a, StdoutT> {
     atoms_as_sexps: bool,
     has_output_on_line: bool,
     row: Vec<Range<usize>>,
     stdout: &'a mut StdoutT,
 }
 
-impl<'a, StdoutT> SelectStage2OutputCsv<'a, StdoutT> {
+impl<'a, StdoutT> OutputCsv<'a, StdoutT> {
     pub fn new(stdout: &'a mut StdoutT, atoms_as_sexps: bool) -> Self {
         Self {
             atoms_as_sexps,
@@ -105,7 +105,7 @@ impl<'a, StdoutT> SelectStage2OutputCsv<'a, StdoutT> {
     }
 }
 
-impl<'a, StdoutT: Write> SelectStage2Output for SelectStage2OutputCsv<'a, StdoutT> {
+impl<'a, StdoutT: Write> Output for OutputCsv<'a, StdoutT> {
     fn bof(&mut self, keys: &Vec<&[u8]>) {
         self.row.resize(keys.len(), 0..0);
         let mut needs_comma = false;
@@ -165,11 +165,11 @@ impl<'a, StdoutT: Write> SelectStage2Output for SelectStage2OutputCsv<'a, Stdout
     }
 }
 
-pub struct SelectStage2<'a, OutputT> {
+pub struct Stage2<'a, OutputT> {
     // varying
     stack_pointer: i32,
 
-    stack: [SelectStage2Context; 64],
+    stack: [State; 64],
     input_index_to_keep: usize,
 
     // static
@@ -179,7 +179,7 @@ pub struct SelectStage2<'a, OutputT> {
     unescape: escape::GenericUnescape,
 }
 
-impl<'a, OutputT> SelectStage2<'a, OutputT> {
+impl<'a, OutputT> Stage2<'a, OutputT> {
     pub fn new<T: IntoIterator<Item = &'a [u8]>>(iter: T, output: OutputT) -> Self {
         let select_vec: Vec<&'a [u8]> = iter.into_iter().collect();
         let mut select_tree: BTreeMap<&'a [u8], u16> = BTreeMap::new();
@@ -188,7 +188,7 @@ impl<'a, OutputT> SelectStage2<'a, OutputT> {
         }
         Self {
             stack_pointer: 0,
-            stack: [SelectStage2Context::Start; 64],
+            stack: [State::Start; 64],
             input_index_to_keep: 0,
             output,
             select_tree,
@@ -198,7 +198,7 @@ impl<'a, OutputT> SelectStage2<'a, OutputT> {
     }
 }
 
-impl<'a, OutputT: SelectStage2Output> parser::Stage2 for SelectStage2<'a, OutputT> {
+impl<'a, OutputT: Output> parser::Stage2 for Stage2<'a, OutputT> {
     type FinalReturnType = ();
 
     fn process_bof(&mut self, _input_size_hint: Option<usize>) {
@@ -211,25 +211,25 @@ impl<'a, OutputT: SelectStage2Output> parser::Stage2 for SelectStage2<'a, Output
         match ch {
             b')' => {
                 match self.stack[self.stack_pointer as usize] {
-                    SelectStage2Context::Selected(key_id, start_offset) => {
+                    State::Selected(key_id, start_offset) => {
                         self.output.select(&self.select_vec, key_id as usize, &input, start_offset..this_index);
                     },
                     _ => (),
                 }
-                self.stack[self.stack_pointer as usize] = SelectStage2Context::Start;
+                self.stack[self.stack_pointer as usize] = State::Start;
             },
             b' ' | b'\t' | b'\n' => (),
             _ => {
                 match self.stack[self.stack_pointer as usize] {
-                    SelectStage2Context::SelectNext(key_id) => {
-                        self.stack[self.stack_pointer as usize] = SelectStage2Context::Selected(key_id, this_index);
+                    State::SelectNext(key_id) => {
+                        self.stack[self.stack_pointer as usize] = State::Selected(key_id, this_index);
                     },
-                    SelectStage2Context::Selected(_, _) => {
-                        self.stack[self.stack_pointer as usize] = SelectStage2Context::Ignore;
+                    State::Selected(_, _) => {
+                        self.stack[self.stack_pointer as usize] = State::Ignore;
                     },
-                    SelectStage2Context::Start => {
+                    State::Start => {
                         if ch == b'(' {
-                            self.stack[self.stack_pointer as usize] = SelectStage2Context::Ignore;
+                            self.stack[self.stack_pointer as usize] = State::Ignore;
                         } else {
                             let key_id =
                                 if ch == b'"' {
@@ -244,8 +244,8 @@ impl<'a, OutputT: SelectStage2Output> parser::Stage2 for SelectStage2<'a, Output
                                     self.select_tree.get(&input.input[(this_index - input.offset)..(next_index - input.offset)]).map(|x| *x)
                                 };
                             self.stack[self.stack_pointer as usize] = match key_id {
-                                None => SelectStage2Context::Ignore,
-                                Some(key_id) => SelectStage2Context::SelectNext(key_id),
+                                None => State::Ignore,
+                                Some(key_id) => State::SelectNext(key_id),
                             }
                         }
                     },
@@ -296,8 +296,6 @@ mod ocaml_ffi {
             unsafe { ocaml::Value::bytes(&self.0[..]) }
         }
     }
-
-    type OutputKind = SelectStage2OutputKind;
 
     impl OutputKind {
         fn values() -> ocaml::Value {
@@ -350,12 +348,12 @@ mod ocaml_ffi {
 
         let mut parser: Box<dyn parser::StateI<(), _>> =
             match (assume_machine_input, output_kind) {
-                (_, SelectStage2OutputKind::Values) =>
-                    Box::new(parser::State::new(SelectStage2::new(keys, SelectStage2OutputValues::new(&mut stdout)))),
-                (_, SelectStage2OutputKind::Labeled) =>
-                    Box::new(parser::State::new(SelectStage2::new(keys, SelectStage2OutputLabeled::new(&mut stdout)))),
-                (_, SelectStage2OutputKind::Csv { atoms_as_sexps }) =>
-                    Box::new(parser::State::new(SelectStage2::new(keys, SelectStage2OutputCsv::new(&mut stdout, atoms_as_sexps )))),
+                (_, OutputKind::Values) =>
+                    Box::new(parser::State::new(Stage2::new(keys, OutputValues::new(&mut stdout)))),
+                (_, OutputKind::Labeled) =>
+                    Box::new(parser::State::new(Stage2::new(keys, OutputLabeled::new(&mut stdout)))),
+                (_, OutputKind::Csv { atoms_as_sexps }) =>
+                    Box::new(parser::State::new(Stage2::new(keys, OutputCsv::new(&mut stdout, atoms_as_sexps )))),
             };
         let () = parser.process_streaming(&mut stdin).unwrap();
     }

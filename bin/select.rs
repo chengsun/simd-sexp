@@ -11,11 +11,6 @@ fn main() {
     let mut stdin = utils::stdin();
     let mut stdout = utils::stdout();
 
-    /*
-    let mut parser = parser::State::from_visitor(select::SelectVisitor::new(select, &mut stdout));
-    let () = parser.process_streaming(&mut stdin).unwrap();
-    */
-
-    let mut parser = parser::State::new(select::SelectStage2::new(select, select::SelectStage2OutputValues::new(&mut stdout)));
+    let mut parser = parser::State::new(select::Stage2::new(select, select::OutputCsv::new(&mut stdout, false)));
     let () = parser.process_streaming(&mut stdin).unwrap();
 }
