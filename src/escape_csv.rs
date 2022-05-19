@@ -7,7 +7,8 @@ pub fn escape<WriterT: std::io::Write>(input: &[u8], output: &mut WriterT) -> Re
     let mut i = 0;
     for next_quote in memchr::memchr_iter(b'"', input) {
         output.write_all(&input[i..next_quote])?;
-        i = next_quote;
+        output.write_all(b"\"\"")?;
+        i = next_quote + 1;
     }
     output.write_all(&input[i..])?;
     output.write_all(b"\"")?;
