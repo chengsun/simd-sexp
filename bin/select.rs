@@ -16,6 +16,6 @@ fn main() {
     let () = parser.process_streaming(&mut stdin).unwrap();
     */
 
-    let mut parser = parser::State::new(select::SelectStage2::new(select, &mut stdout, select::SelectStage2OutputKind::Values));
+    let mut parser = parser::State::new(select::SelectStage2::new(select, select::SelectStage2OutputValues::new(&mut stdout)));
     let () = parser.process_streaming(&mut stdin).unwrap();
 }

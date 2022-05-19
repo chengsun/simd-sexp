@@ -66,7 +66,7 @@ let cmd_multi_select =
              "-csv"
              no_arg
              ~doc:" output values of matching keys in CSV format, with keys as headers"
-           |> map ~f:(fun b -> Option.some_if b `Labeled)
+           |> map ~f:(fun b -> Option.some_if b `Csv)
          ]
      in
      fun () ->

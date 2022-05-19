@@ -280,3 +280,13 @@ impl<Stage2T: Stage2> State<Stage2T> {
         }
     }
 }
+
+pub trait StateI<FinalReturnType, BufReadT> {
+    fn process_streaming(&mut self, buf_reader: &mut BufReadT) -> Result<FinalReturnType, Error>;
+}
+
+impl<BufReadT: std::io::BufRead, FinalReturnType, Stage2T: Stage2<FinalReturnType = FinalReturnType>> StateI<FinalReturnType, BufReadT> for State<Stage2T> {
+    fn process_streaming(&mut self, buf_reader: &mut BufReadT) -> Result<FinalReturnType, Error> {
+        self.process_streaming(buf_reader)
+    }
+}
