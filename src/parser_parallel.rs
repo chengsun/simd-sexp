@@ -228,48 +228,51 @@ where
                 // handle one input, if we can
                 if !is_eof_local && output_queue.len() <= CHUNK_LOOKAHEAD {
                     #[cfg(feature = "vtune")] let task = ittapi::Task::begin(&domain, "handle_input");
-                    match buf_reader.fill_buf() {
-                        Err(e) => { return Err(Error::IOError(e.kind())) },
-                        Ok(&[]) => {
-                            let work_unit_to_dispatch = std::mem::take(&mut next_work_unit);
-                            let work_unit_index = next_work_unit_index;
-                            work_queue.push(WorkUnit { index: work_unit_index, buffer: work_unit_to_dispatch });
-                            output_queue.push_back(None);
-
-                            next_work_unit_index += 1;
-
-                            is_eof.store(true, Ordering::Release);
-                            is_eof_local = true;
-                        },
-                        Ok(buffer) => {
-                            let len = buffer.len();
-                            let split_index =
-                                if next_work_unit.len() + len > CHUNK_SIZE {
-                                    let offset = CHUNK_SIZE.saturating_sub(next_work_unit.len());
-                                    memchr::memchr_iter(b'\n', &(*buffer)[offset..])
-                                        .map(|x| x + offset)
-                                        .find(|split_index| { split_index + 1 < len && buffer[split_index + 1] != b' ' })
-                                } else {
-                                    None
-                                };
-                            match split_index {
-                                Some(split_index) => {
-                                    next_work_unit.extend_from_slice(&buffer[..split_index]);
-                                    let work_unit_to_dispatch = std::mem::take(&mut next_work_unit);
-                                    let work_unit_index = next_work_unit_index;
-                                    work_queue.push(WorkUnit { index: work_unit_index, buffer: work_unit_to_dispatch });
-                                    output_queue.push_back(None);
-
-                                    next_work_unit.extend_from_slice(&buffer[split_index..]);
-                                    next_work_unit_index += 1;
-                                },
-                                None => {
-                                    next_work_unit.extend_from_slice(&buffer[..]);
-                                },
+                    let mut work_unit_to_dispatch = None;
+                    let mut just_reached_eof = false;
+                    while work_unit_to_dispatch.is_none() {
+                        match buf_reader.fill_buf() {
+                            Err(e) => { return Err(Error::IOError(e.kind())); },
+                            Ok(&[]) => {
+                                just_reached_eof = true;
+                                work_unit_to_dispatch = Some(std::mem::take(&mut next_work_unit));
                             }
-                            std::mem::drop(buffer);
-                            buf_reader.consume(len);
-                        },
+                            Ok(buffer) => {
+                                let len = buffer.len();
+                                let split_index =
+                                    if next_work_unit.len() + len > CHUNK_SIZE {
+                                        let offset = CHUNK_SIZE.saturating_sub(next_work_unit.len());
+                                        memchr::memchr_iter(b'\n', &(*buffer)[offset..])
+                                            .map(|x| x + offset)
+                                            .find(|split_index| { split_index + 1 < len && buffer[split_index + 1] != b' ' })
+                                    } else {
+                                        None
+                                    };
+                                match split_index {
+                                    Some(split_index) => {
+                                        next_work_unit.extend_from_slice(&buffer[..split_index]);
+                                        work_unit_to_dispatch = Some(std::mem::take(&mut next_work_unit));
+                                        next_work_unit.extend_from_slice(&buffer[split_index..]);
+                                    },
+                                    None => {
+                                        next_work_unit.extend_from_slice(&buffer[..]);
+                                    },
+                                };
+                                std::mem::drop(buffer);
+                                buf_reader.consume(len);
+                            },
+                        }
+                    }
+                    let work_unit_to_dispatch = work_unit_to_dispatch.unwrap();
+                    let work_unit_index = next_work_unit_index;
+                    work_queue.push(WorkUnit { index: work_unit_index, buffer: work_unit_to_dispatch });
+                    output_queue.push_back(None);
+
+                    next_work_unit_index += 1;
+
+                    if just_reached_eof {
+                        is_eof.store(true, Ordering::Release);
+                        is_eof_local = true;
                     }
                     #[cfg(feature = "vtune")] task.end();
                 } else {
