@@ -1,5 +1,47 @@
 use simd_sexp::*;
-use std::io::BufReader;
+
+struct LoopReader<'a> {
+    source: &'a [u8],
+    current: &'a [u8],
+    loops_remaining: usize,
+}
+
+impl<'a> LoopReader<'a> {
+    fn new(source: &'a [u8], loops: usize) -> Self {
+        Self { source, current: &[][..], loops_remaining: loops }
+    }
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        if self.current.is_empty() && self.loops_remaining > 0 {
+            self.loops_remaining -= 1;
+            self.current = self.source;
+        }
+        Ok(self.current)
+    }
+    fn consume(&mut self, amt: usize) {
+        self.current = &self.current[amt..];
+    }
+}
+
+impl<'a> std::io::Read for LoopReader<'a> {
+    #[inline]
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let my_buf = self.fill_buf()?;
+        let amt = std::cmp::min(buf.len(), my_buf.len());
+        buf[..amt].copy_from_slice(my_buf);
+        std::mem::drop(my_buf);
+        self.consume(amt);
+        Ok(amt)
+    }
+}
+
+impl<'a> std::io::BufRead for LoopReader<'a> {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        self.fill_buf()
+    }
+    fn consume(&mut self, amt: usize) {
+        self.consume(amt)
+    }
+}
 
 fn main() {
     let input_pp = std::fs::read_to_string("/home/user/simd-sexp/test_data.mach.sexp").unwrap();
@@ -59,8 +101,6 @@ fn main() {
         },
 
         Some("select") => {
-            use std::io::Read;
-
             let keys = [&b"name"[..], &b"libraries"[..]];
 
             let event_frame = ittapi::Event::new("frame");
@@ -68,23 +108,19 @@ fn main() {
             println!("Warmup");
 
             {
-                let mut read: Box<dyn std::io::Read> = Box::new(std::io::empty());
-                for _i in 0..10000 { read = Box::new(read.chain(&input_pp[..])); }
-
+                let mut read = LoopReader::new(&input_pp[..], 40000);
                 let mut result = Vec::new();
-                let () = select_parallel::process_streaming(keys, &mut BufReader::new(read), &mut result).unwrap();
+                let () = select_parallel::process_streaming(keys, &mut read, &mut result).unwrap();
                 criterion::black_box(result);
             }
 
             println!("Profiling");
 
             {
-                let mut read: Box<dyn std::io::Read> = Box::new(std::io::empty());
-                for _i in 0..10000 { read = Box::new(read.chain(&input_pp[..])); }
-
+                let mut read = LoopReader::new(&input_pp[..], 40000);
                 let e = event_frame.start();
                 let mut result = Vec::new();
-                let () = select_parallel::process_streaming(keys, &mut BufReader::new(read), &mut result).unwrap();
+                let () = select_parallel::process_streaming(keys, &mut read, &mut result).unwrap();
                 criterion::black_box(result);
                 std::mem::drop(e);
             }
