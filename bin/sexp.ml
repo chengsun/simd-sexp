@@ -68,9 +68,15 @@ let cmd_multi_select =
              ~doc:" output values of matching keys in CSV format, with keys as headers"
            |> map ~f:(fun b -> Option.some_if b `Csv)
          ]
+     and threads =
+       flag "-no-threads" no_arg ~doc:" use single-threaded mode" |> map ~f:not
      in
      fun () ->
-       Simd_sexp.Select.multi_select ~select_keys ~assume_machine_input ~output_kind)
+       Simd_sexp.Select.multi_select
+         ~select_keys
+         ~assume_machine_input
+         ~output_kind
+         ~threads)
 ;;
 
 let command =

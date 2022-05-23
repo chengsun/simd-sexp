@@ -8,7 +8,7 @@ edition = "2021"
 crate-type = ["lib", "staticlib"]
 
 [features]
-default = ["threads"]
+default = ["threads", "ocaml"]
 ocaml = ["dep:ocaml"]
 threads = ["dep:crossbeam-deque", "dep:crossbeam-queue", "dep:crossbeam-utils", "dep:num_cpus"]
 vtune = ["dep:ittapi", "dep:criterion"]

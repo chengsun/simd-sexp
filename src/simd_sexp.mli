@@ -33,5 +33,6 @@ module Select : sig
     :  select_keys:string list
     -> assume_machine_input:bool
     -> output_kind:[ `Values | `Labeled | `Csv ]
+    -> threads:bool
     -> unit
 end
