@@ -139,7 +139,8 @@ impl Output for OutputCsv {
                 if !Range::is_empty(value_range) {
                     let value = &input.input[(value_range.start - input.offset)..(value_range.end - input.offset)];
                     if !self.atoms_as_sexps && value[0] == b'\"' {
-                        // quoted atom -> plain string -> quoted CSV. This could be done faster.
+                        // quoted atom -> plain string -> quoted CSV.
+                        // TODO: This could be done faster.
                         let mut plain_string: Vec<u8> = value.iter().map(|_| 0u8).collect();
                         let (_, plain_string_len) = escape::GenericUnescape::new().unescape(&value[1..], &mut plain_string[..]).unwrap();
                         plain_string.truncate(plain_string_len);

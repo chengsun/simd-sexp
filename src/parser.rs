@@ -9,6 +9,10 @@ pub struct Input<'a> {
     pub input: &'a [u8],
 }
 
+/// Sometimes a `Stage2` is asked to produce a segment of an input sexp, not the
+/// whole thing. The `Stage2` might want to know about this (e.g. a CSV writer
+/// might want to print out the header only when processing the actual beginning
+/// of the sexp.)
 pub enum SegmentIndex {
     EntireFile,
     Segment(usize),
