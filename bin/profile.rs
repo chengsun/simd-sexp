@@ -59,24 +59,32 @@ fn main() {
         },
 
         Some("select") => {
+            use std::io::Read;
+
             let keys = [&b"name"[..], &b"libraries"[..]];
 
             let event_frame = ittapi::Event::new("frame");
 
             println!("Warmup");
 
-            for _i in 0..10000 {
+            {
+                let mut read: Box<dyn std::io::Read> = Box::new(std::io::empty());
+                for _i in 0..10000 { read = Box::new(read.chain(&input_pp[..])); }
+
                 let mut result = Vec::new();
-                let () = select_parallel::process_streaming(keys, &mut BufReader::new(input_pp), &mut result).unwrap();
+                let () = select_parallel::process_streaming(keys, &mut BufReader::new(read), &mut result).unwrap();
                 criterion::black_box(result);
             }
 
             println!("Profiling");
 
-            for _i in 0..10000 {
+            {
+                let mut read: Box<dyn std::io::Read> = Box::new(std::io::empty());
+                for _i in 0..10000 { read = Box::new(read.chain(&input_pp[..])); }
+
                 let e = event_frame.start();
                 let mut result = Vec::new();
-                let () = select_parallel::process_streaming(keys, &mut BufReader::new(input_pp), &mut result).unwrap();
+                let () = select_parallel::process_streaming(keys, &mut BufReader::new(read), &mut result).unwrap();
                 criterion::black_box(result);
                 std::mem::drop(e);
             }
