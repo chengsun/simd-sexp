@@ -175,13 +175,12 @@ let of_string_many_rust_sexp input =
 module Select = struct
   external _multi_select
     :  string list
-    -> bool
     -> [ `Values | `Labeled | `Csv ]
     -> bool
     -> unit
     = "ml_multi_select"
 
-  let multi_select ~select_keys ~assume_machine_input ~output_kind ~threads =
-    _multi_select select_keys assume_machine_input output_kind threads
+  let multi_select ~select_keys ~output_kind ~threads =
+    _multi_select select_keys output_kind threads
   ;;
 end

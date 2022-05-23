@@ -280,35 +280,35 @@ impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
 }
 
 pub fn make_parser<'a, KeysT: IntoIterator<Item = &'a [u8]>, ReadT: BufRead, WriteT: Write>
-    (keys: KeysT, stdout: &'a mut WriteT, assume_machine_input: bool, output_kind: OutputKind, threads: bool)
+    (keys: KeysT, stdout: &'a mut WriteT, output_kind: OutputKind, threads: bool)
     -> Box<dyn parser::StateI<(), ReadT> + 'a>
 {
     let keys: Vec<&'a [u8]> = keys.into_iter().collect();
 
     #[cfg(feature = "threads")]
     if threads {
-        return match (assume_machine_input, output_kind) {
-            (_, OutputKind::Values) =>
+        return match output_kind {
+            OutputKind::Values =>
                 Box::new(parser_parallel::State::from_writing_stage2(move || {
                     Stage2::new(keys.iter().map(|x| *x), OutputValues::new())
                 }, stdout)),
-            (_, OutputKind::Labeled) =>
+            OutputKind::Labeled =>
                 Box::new(parser_parallel::State::from_writing_stage2(move || {
                     Stage2::new(keys.iter().map(|x| *x), OutputLabeled::new())
                 }, stdout)),
-            (_, OutputKind::Csv { atoms_as_sexps }) =>
+            OutputKind::Csv { atoms_as_sexps } =>
                 Box::new(parser_parallel::State::from_writing_stage2(move || {
                     Stage2::new(keys.iter().map(|x| *x), OutputCsv::new(atoms_as_sexps))
                 }, stdout)),
         };
     }
 
-    match (assume_machine_input, output_kind) {
-        (_, OutputKind::Values) =>
+    match output_kind {
+        OutputKind::Values =>
             Box::new(parser::State::from_writing_stage2(Stage2::new(keys, OutputValues::new()), stdout)),
-        (_, OutputKind::Labeled) =>
+        OutputKind::Labeled =>
             Box::new(parser::State::from_writing_stage2(Stage2::new(keys, OutputLabeled::new()), stdout)),
-        (_, OutputKind::Csv { atoms_as_sexps }) =>
+        OutputKind::Csv { atoms_as_sexps } =>
             Box::new(parser::State::from_writing_stage2(Stage2::new(keys, OutputCsv::new(atoms_as_sexps)), stdout)),
     }
 }
@@ -376,13 +376,13 @@ mod ocaml_ffi {
     }
 
     #[ocaml::func]
-    pub fn ml_multi_select(keys: LinkedList<ByteString>, assume_machine_input: bool, output_kind: OutputKind, threads: bool) {
+    pub fn ml_multi_select(keys: LinkedList<ByteString>, output_kind: OutputKind, threads: bool) {
         let mut stdin = utils::stdin();
         let mut stdout = utils::stdout();
 
         let keys = keys.iter().map(|s| &s.0[..]);
 
-        let mut parser = make_parser(keys, &mut stdout, assume_machine_input, output_kind, threads);
+        let mut parser = make_parser(keys, &mut stdout, output_kind, threads);
         let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut stdin).unwrap();
     }
 }
@@ -391,15 +391,15 @@ mod ocaml_ffi {
 mod tests {
     use super::*;
 
-    fn run_test(assume_machine_input: bool, output_kind: OutputKind, input: &[u8], keys: &[&[u8]], expected_output: &[u8]) {
+    fn run_test(output_kind: OutputKind, input: &[u8], keys: &[&[u8]], expected_output: &[u8]) {
         let mut output = Vec::new();
-        let mut parser = make_parser(keys.iter().map(|x| *x), &mut output, assume_machine_input, output_kind, false);
+        let mut parser = make_parser(keys.iter().map(|x| *x), &mut output, output_kind, false);
         let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut std::io::BufReader::new(input)).unwrap();
         std::mem::drop(parser);
 
         assert_eq!(std::str::from_utf8(&output[..]).unwrap(),
                    std::str::from_utf8(expected_output).unwrap(),
-                   "assume_machine_input: {}, output_kind: {:?}", assume_machine_input, output_kind);
+                   "output_kind: {:?}", output_kind);
     }
 
     #[test]
@@ -407,7 +407,6 @@ mod tests {
         let input = br#"((foo bar))"#;
         let keys = &[&b"foo"[..]];
         run_test(
-            false,
             OutputKind::Csv { atoms_as_sexps: false },
             input,
             keys,
@@ -415,7 +414,6 @@ mod tests {
 bar
 "#);
         run_test(
-            false,
             OutputKind::Csv { atoms_as_sexps: true },
             input,
             keys,
@@ -429,7 +427,6 @@ bar
         let input = br#"((foo"bar"))"#;
         let keys = &[&b"foo"[..]];
         run_test(
-            false,
             OutputKind::Csv { atoms_as_sexps: false },
             input,
             keys,
@@ -437,7 +434,6 @@ bar
 bar
 "#);
         run_test(
-            false,
             OutputKind::Csv { atoms_as_sexps: true },
             input,
             keys,
@@ -451,7 +447,6 @@ bar
         let input = br#"(("foo"bar))"#;
         let keys = &[&b"foo"[..]];
         run_test(
-            false,
             OutputKind::Csv { atoms_as_sexps: false },
             input,
             keys,
@@ -459,7 +454,6 @@ bar
 bar
 "#);
         run_test(
-            false,
             OutputKind::Csv { atoms_as_sexps: true },
             input,
             keys,
@@ -473,7 +467,6 @@ bar
         let input = br#"((foo"bar\"baz"))"#;
         let keys = &[&b"foo"[..]];
         run_test(
-            false,
             OutputKind::Csv { atoms_as_sexps: false },
             input,
             keys,
@@ -481,7 +474,6 @@ bar
 "bar""baz"
 "#);
         run_test(
-            false,
             OutputKind::Csv { atoms_as_sexps: true },
             input,
             keys,
@@ -495,7 +487,6 @@ bar
         let input = br#"((foo"bar baz"))"#;
         let keys = &[&b"foo"[..]];
         run_test(
-            false,
             OutputKind::Csv { atoms_as_sexps: false },
             input,
             keys,
@@ -503,7 +494,6 @@ bar
 bar baz
 "#);
         run_test(
-            false,
             OutputKind::Csv { atoms_as_sexps: true },
             input,
             keys,
@@ -517,7 +507,6 @@ bar baz
         let input = br#"((foo bar,baz))"#;
         let keys = &[&b"foo"[..]];
         run_test(
-            false,
             OutputKind::Csv { atoms_as_sexps: false },
             input,
             keys,
@@ -525,7 +514,6 @@ bar baz
 "bar,baz"
 "#);
         run_test(
-            false,
             OutputKind::Csv { atoms_as_sexps: true },
             input,
             keys,
@@ -539,7 +527,6 @@ bar baz
         let input = br#"((foo "bar, baz"))"#;
         let keys = &[&b"foo"[..]];
         run_test(
-            false,
             OutputKind::Csv { atoms_as_sexps: false },
             input,
             keys,
@@ -547,7 +534,6 @@ bar baz
 "bar, baz"
 "#);
         run_test(
-            false,
             OutputKind::Csv { atoms_as_sexps: true },
             input,
             keys,

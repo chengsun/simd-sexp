@@ -31,7 +31,6 @@ val of_string_many_rust_sexp : string -> rust_sexp list
 module Select : sig
   val multi_select
     :  select_keys:string list
-    -> assume_machine_input:bool
     -> output_kind:[ `Values | `Labeled | `Csv ]
     -> threads:bool
     -> unit

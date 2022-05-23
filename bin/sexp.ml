@@ -45,13 +45,6 @@ let cmd_multi_select =
     ~summary:"Select multiple field names"
     (let%map_open.Command select_keys =
        anon (non_empty_sequence_as_list ("KEY" %: string))
-     and assume_machine_input =
-       flag
-         "-assume-machine-input"
-         no_arg
-         ~doc:
-           " match keys only if they appear literally in machine format (faster, but not \
-            necessarily true for hand-written sexps)"
      and output_kind =
        choose_one
          ~if_nothing_chosen:(Default_to `Values)
@@ -71,12 +64,7 @@ let cmd_multi_select =
      and threads =
        flag "-no-threads" no_arg ~doc:" use single-threaded mode" |> map ~f:not
      in
-     fun () ->
-       Simd_sexp.Select.multi_select
-         ~select_keys
-         ~assume_machine_input
-         ~output_kind
-         ~threads)
+     fun () -> Simd_sexp.Select.multi_select ~select_keys ~output_kind ~threads)
 ;;
 
 let command =
