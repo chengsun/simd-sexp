@@ -222,6 +222,13 @@ where
                     match buf_reader.fill_buf() {
                         Err(e) => { return Err(Error::IOError(e.kind())) },
                         Ok(&[]) => {
+                            let work_unit_to_dispatch = std::mem::take(&mut next_work_unit);
+                            let work_unit_index = next_work_unit_index;
+                            work_queue.push(WorkUnit { index: work_unit_index, buffer: work_unit_to_dispatch });
+                            output_queue.push_back(None);
+
+                            next_work_unit_index += 1;
+
                             is_eof.store(true, Ordering::Release);
                             is_eof_local = true;
                         },

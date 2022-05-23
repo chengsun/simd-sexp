@@ -13,7 +13,7 @@ fn main() {
 
     /*
     let mut parser = parser::State::from_writing_stage2(select::Stage2::new(select, select::OutputCsv::new(false)), &mut stdout);
-    let () = parser.process_streaming(&mut stdin).unwrap();
+    let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut stdin).unwrap();
     */
 
     let () = select_parallel::process_streaming(select, &mut stdin, &mut stdout).unwrap();
