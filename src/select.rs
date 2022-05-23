@@ -21,8 +21,8 @@ pub enum OutputKind {
     Csv { atoms_as_sexps: bool },
 }
 
-trait Output {
-    fn bof<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>);
+pub trait Output {
+    fn bof<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, segment_index: parser::SegmentIndex);
     fn select<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, key_id: usize, input: &parser::Input, value_range: Range<usize>);
     fn eol<WriteT: Write>(&mut self, writer: &mut WriteT, input: &parser::Input);
 }
@@ -38,7 +38,7 @@ impl OutputValues {
 }
 
 impl Output for OutputValues {
-    fn bof<WriteT: Write>(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>) {
+    fn bof<WriteT: Write>(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>, _segment_index: parser::SegmentIndex) {
     }
     fn select<WriteT: Write>(&mut self, writer: &mut WriteT, _keys: &Vec<&[u8]>, _key_id: usize, input: &parser::Input, value_range: Range<usize>) {
         let value = &input.input[(value_range.start - input.offset)..(value_range.end - input.offset)];
@@ -65,7 +65,7 @@ impl OutputLabeled {
 }
 
 impl Output for OutputLabeled {
-    fn bof<WriteT: Write>(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>) {
+    fn bof<WriteT: Write>(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>, _segment_index: parser::SegmentIndex) {
     }
     fn select<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, key_id: usize, input: &parser::Input, value_range: Range<usize>) {
         let key = keys[key_id];
@@ -103,21 +103,26 @@ impl OutputCsv {
 }
 
 impl Output for OutputCsv {
-    fn bof<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>) {
+    fn bof<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, segment_index: parser::SegmentIndex) {
         self.row.resize(keys.len(), 0..0);
-        let mut needs_comma = false;
-        for key in keys {
-            if needs_comma {
-                writer.write_all(&b","[..]).unwrap();
-            }
-            needs_comma = true;
-            if escape_csv::escape_is_necessary(key) {
-                escape_csv::escape(key, writer).unwrap();
-            } else {
-                writer.write_all(&key[..]).unwrap();
-            }
+        match segment_index {
+            parser::SegmentIndex::EntireFile | parser::SegmentIndex::Segment(0) => {
+                let mut needs_comma = false;
+                for key in keys {
+                    if needs_comma {
+                        writer.write_all(&b","[..]).unwrap();
+                    }
+                    needs_comma = true;
+                    if escape_csv::escape_is_necessary(key) {
+                        escape_csv::escape(key, writer).unwrap();
+                    } else {
+                        writer.write_all(&key[..]).unwrap();
+                    }
+                }
+                writer.write_all(&b"\n"[..]).unwrap();
+            },
+            parser::SegmentIndex::Segment(_) => (),
         }
-        writer.write_all(&b"\n"[..]).unwrap();
     }
     fn select<WriteT: Write>(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>, key_id: usize, _input: &parser::Input, value_range: Range<usize>) {
         self.row[key_id] = value_range;
@@ -196,8 +201,8 @@ impl<'a, OutputT> Stage2<'a, OutputT> {
 }
 
 impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
-    fn process_bof<WriteT: Write>(&mut self, writer: &mut WriteT) {
-        self.output.bof(writer, &self.select_vec);
+    fn process_bof<WriteT: Write>(&mut self, writer: &mut WriteT, segment_index: parser::SegmentIndex) {
+        self.output.bof(writer, &self.select_vec, segment_index);
     }
 
     #[inline(always)]
@@ -365,7 +370,7 @@ mod tests {
     fn run_test(assume_machine_input: bool, output_kind: OutputKind, input: &[u8], keys: &[&[u8]], expected_output: &[u8]) {
         let mut output = Vec::new();
         let mut parser = make_parser(keys.iter().map(|x| *x), &mut output, assume_machine_input, output_kind);
-        let () = parser.process_streaming(&mut std::io::BufReader::new(input)).unwrap();
+        let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut std::io::BufReader::new(input)).unwrap();
         std::mem::drop(parser);
 
         assert_eq!(std::str::from_utf8(&output[..]).unwrap(),

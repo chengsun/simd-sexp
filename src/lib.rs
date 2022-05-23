@@ -6,10 +6,14 @@ pub mod find_quote_transitions;
 #[cfg(feature = "ocaml")]
 pub mod ocaml_parser;
 pub mod parser;
+#[cfg(feature = "threads")]
+pub mod parser_parallel;
 pub mod ranges;
 pub mod rust_generator;
 pub mod rust_parser;
 pub mod select;
+#[cfg(feature = "threads")]
+pub mod select_parallel;
 pub mod start_stop_transitions;
 pub mod structural;
 pub mod utils;
