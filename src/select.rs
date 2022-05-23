@@ -21,118 +21,114 @@ pub enum OutputKind {
     Csv { atoms_as_sexps: bool },
 }
 
-trait Output {
-    fn bof(&mut self, keys: &Vec<&[u8]>);
-    fn select(&mut self, keys: &Vec<&[u8]>, key_id: usize, input: &parser::Input, value_range: Range<usize>);
-    fn eol(&mut self, input: &parser::Input);
+trait Output<WriteT> {
+    fn bof(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>);
+    fn select(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, key_id: usize, input: &parser::Input, value_range: Range<usize>);
+    fn eol(&mut self, writer: &mut WriteT, input: &parser::Input);
 }
 
-pub struct OutputValues<'a, StdoutT> {
+pub struct OutputValues {
     has_output_on_line: bool,
-    stdout: &'a mut StdoutT,
 }
 
-impl<'a, StdoutT> OutputValues<'a, StdoutT> {
-    pub fn new(stdout: &'a mut StdoutT) -> Self {
-        Self { has_output_on_line: false, stdout }
+impl OutputValues {
+    pub fn new() -> Self {
+        Self { has_output_on_line: false }
     }
 }
 
-impl<'a, StdoutT: Write> Output for OutputValues<'a, StdoutT> {
-    fn bof(&mut self, _keys: &Vec<&[u8]>) {
+impl<WriteT: Write> Output<WriteT> for OutputValues {
+    fn bof(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>) {
     }
-    fn select(&mut self, _keys: &Vec<&[u8]>, _key_id: usize, input: &parser::Input, value_range: Range<usize>) {
+    fn select(&mut self, writer: &mut WriteT, _keys: &Vec<&[u8]>, _key_id: usize, input: &parser::Input, value_range: Range<usize>) {
         let value = &input.input[(value_range.start - input.offset)..(value_range.end - input.offset)];
-        self.stdout.write_all(if self.has_output_on_line { &b" "[..] } else { &b"("[..] }).unwrap();
-        self.stdout.write_all(&value[..]).unwrap();
+        writer.write_all(if self.has_output_on_line { &b" "[..] } else { &b"("[..] }).unwrap();
+        writer.write_all(&value[..]).unwrap();
         self.has_output_on_line = true;
     }
-    fn eol(&mut self, _input: &parser::Input) {
+    fn eol(&mut self, writer: &mut WriteT, _input: &parser::Input) {
         if self.has_output_on_line {
-            self.stdout.write(&b")\n"[..]).unwrap();
+            writer.write(&b")\n"[..]).unwrap();
             self.has_output_on_line = false;
         }
     }
 }
 
-pub struct OutputLabeled<'a, StdoutT> {
+pub struct OutputLabeled {
     has_output_on_line: bool,
-    stdout: &'a mut StdoutT,
 }
 
-impl<'a, StdoutT> OutputLabeled<'a, StdoutT> {
-    pub fn new(stdout: &'a mut StdoutT) -> Self {
-        Self { has_output_on_line: false, stdout }
+impl OutputLabeled {
+    pub fn new() -> Self {
+        Self { has_output_on_line: false }
     }
 }
 
-impl<'a, StdoutT: Write> Output for OutputLabeled<'a, StdoutT> {
-    fn bof(&mut self, _keys: &Vec<&[u8]>) {
+impl<WriteT: Write> Output<WriteT> for OutputLabeled {
+    fn bof(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>) {
     }
-    fn select(&mut self, keys: &Vec<&[u8]>, key_id: usize, input: &parser::Input, value_range: Range<usize>) {
+    fn select(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, key_id: usize, input: &parser::Input, value_range: Range<usize>) {
         let key = keys[key_id];
         let value = &input.input[(value_range.start - input.offset)..(value_range.end - input.offset)];
-        self.stdout.write_all(&b"(("[(self.has_output_on_line as usize)..]).unwrap();
+        writer.write_all(&b"(("[(self.has_output_on_line as usize)..]).unwrap();
         // TODO: escape key if necessary
-        self.stdout.write_all(&key[..]).unwrap();
-        self.stdout.write_all(&b" "[..]).unwrap();
-        self.stdout.write_all(&value[..]).unwrap();
-        self.stdout.write_all(&b")"[..]).unwrap();
+        writer.write_all(&key[..]).unwrap();
+        writer.write_all(&b" "[..]).unwrap();
+        writer.write_all(&value[..]).unwrap();
+        writer.write_all(&b")"[..]).unwrap();
         self.has_output_on_line = true;
     }
-    fn eol(&mut self, _input: &parser::Input) {
+    fn eol(&mut self, writer: &mut WriteT, _input: &parser::Input) {
         if self.has_output_on_line {
-            self.stdout.write(&b")\n"[..]).unwrap();
+            writer.write(&b")\n"[..]).unwrap();
             self.has_output_on_line = false;
         }
     }
 }
 
-pub struct OutputCsv<'a, StdoutT> {
+pub struct OutputCsv {
     atoms_as_sexps: bool,
     has_output_on_line: bool,
     row: Vec<Range<usize>>,
-    stdout: &'a mut StdoutT,
 }
 
-impl<'a, StdoutT> OutputCsv<'a, StdoutT> {
-    pub fn new(stdout: &'a mut StdoutT, atoms_as_sexps: bool) -> Self {
+impl OutputCsv {
+    pub fn new(atoms_as_sexps: bool) -> Self {
         Self {
             atoms_as_sexps,
             has_output_on_line: false,
             row: Vec::new(),
-            stdout,
         }
     }
 }
 
-impl<'a, StdoutT: Write> Output for OutputCsv<'a, StdoutT> {
-    fn bof(&mut self, keys: &Vec<&[u8]>) {
+impl<WriteT: Write> Output<WriteT> for OutputCsv {
+    fn bof(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>) {
         self.row.resize(keys.len(), 0..0);
         let mut needs_comma = false;
         for key in keys {
             if needs_comma {
-                self.stdout.write_all(&b","[..]).unwrap();
+                writer.write_all(&b","[..]).unwrap();
             }
             needs_comma = true;
             if escape_csv::escape_is_necessary(key) {
-                escape_csv::escape(key, self.stdout).unwrap();
+                escape_csv::escape(key, writer).unwrap();
             } else {
-                self.stdout.write_all(&key[..]).unwrap();
+                writer.write_all(&key[..]).unwrap();
             }
         }
-        self.stdout.write_all(&b"\n"[..]).unwrap();
+        writer.write_all(&b"\n"[..]).unwrap();
     }
-    fn select(&mut self, _keys: &Vec<&[u8]>, key_id: usize, _input: &parser::Input, value_range: Range<usize>) {
+    fn select(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>, key_id: usize, _input: &parser::Input, value_range: Range<usize>) {
         self.row[key_id] = value_range;
         self.has_output_on_line = true;
     }
-    fn eol(&mut self, input: &parser::Input) {
+    fn eol(&mut self, writer: &mut WriteT, input: &parser::Input) {
         if self.has_output_on_line {
             let mut needs_comma = false;
             for value_range in self.row.iter_mut() {
                 if needs_comma {
-                    self.stdout.write_all(&b","[..]).unwrap();
+                    writer.write_all(&b","[..]).unwrap();
                 }
                 needs_comma = true;
                 if !Range::is_empty(value_range) {
@@ -145,22 +141,22 @@ impl<'a, StdoutT: Write> Output for OutputCsv<'a, StdoutT> {
 
                         let plain_string = &plain_string[..];
                         if escape_csv::escape_is_necessary(plain_string) {
-                            escape_csv::escape(plain_string, self.stdout).unwrap();
+                            escape_csv::escape(plain_string, writer).unwrap();
                         } else {
-                            self.stdout.write_all(plain_string).unwrap();
+                            writer.write_all(plain_string).unwrap();
                         }
                     } else {
                         if escape_csv::escape_is_necessary(value) {
-                            escape_csv::escape(value, self.stdout).unwrap();
+                            escape_csv::escape(value, writer).unwrap();
                         } else {
-                            self.stdout.write_all(value).unwrap();
+                            writer.write_all(value).unwrap();
                         }
                     }
                 }
 
                 *value_range = 0..0;
             }
-            self.stdout.write_all(&b"\n"[..]).unwrap();
+            writer.write_all(&b"\n"[..]).unwrap();
             self.has_output_on_line = false;
         }
     }
@@ -199,21 +195,19 @@ impl<'a, OutputT> Stage2<'a, OutputT> {
     }
 }
 
-impl<'a, OutputT: Output> parser::Stage2 for Stage2<'a, OutputT> {
-    type FinalReturnType = ();
-
-    fn process_bof(&mut self, _input_size_hint: Option<usize>) {
-        self.output.bof(&self.select_vec);
+impl<'a, WriteT: Write, OutputT: Output<WriteT>> parser::WritingStage2<WriteT> for Stage2<'a, OutputT> {
+    fn process_bof(&mut self, writer: &mut WriteT) {
+        self.output.bof(writer, &self.select_vec);
     }
 
     #[inline(always)]
-    fn process_one(&mut self, input: parser::Input, this_index: usize, next_index: usize) -> Result<usize, parser::Error> {
+    fn process_one(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize) -> Result<usize, parser::Error> {
         let ch = input.input[this_index - input.offset];
         match ch {
             b')' => {
                 match self.stack[self.stack_pointer as usize] {
                     State::Selected(key_id, start_offset) => {
-                        self.output.select(&self.select_vec, key_id as usize, &input, start_offset..this_index);
+                        self.output.select(writer, &self.select_vec, key_id as usize, &input, start_offset..this_index);
                     },
                     _ => (),
                 }
@@ -266,13 +260,13 @@ impl<'a, OutputT: Output> parser::Stage2 for Stage2<'a, OutputT> {
         assert!((self.stack_pointer as usize) < self.stack.len(), "Too deeply nested");
 
         if self.stack_pointer == 0 {
-            self.output.eol(&input);
+            self.output.eol(writer, &input);
         }
 
         Ok(self.input_index_to_keep)
     }
 
-    fn process_eof(&mut self) -> Result<Self::FinalReturnType, parser::Error> {
+    fn process_eof(&mut self, _writer: &mut WriteT) -> Result<(), parser::Error> {
         Ok(())
     }
 }
@@ -282,11 +276,11 @@ pub fn make_parser<'a, KeysT: IntoIterator<Item = &'a [u8]>, ReadT: BufRead, Wri
     -> Box<dyn parser::StateI<(), ReadT> + 'a> {
     match (assume_machine_input, output_kind) {
         (_, OutputKind::Values) =>
-            Box::new(parser::State::new(Stage2::new(keys, OutputValues::new(stdout)))),
+            Box::new(parser::State::from_writing_stage2(Stage2::new(keys, OutputValues::new()), stdout)),
         (_, OutputKind::Labeled) =>
-            Box::new(parser::State::new(Stage2::new(keys, OutputLabeled::new(stdout)))),
+            Box::new(parser::State::from_writing_stage2(Stage2::new(keys, OutputLabeled::new()), stdout)),
         (_, OutputKind::Csv { atoms_as_sexps }) =>
-            Box::new(parser::State::new(Stage2::new(keys, OutputCsv::new(stdout, atoms_as_sexps)))),
+            Box::new(parser::State::from_writing_stage2(Stage2::new(keys, OutputCsv::new(atoms_as_sexps)), stdout)),
     }
 }
 

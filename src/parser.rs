@@ -1,6 +1,7 @@
 use crate::{escape, extract, structural};
 use crate::utils::*;
 use crate::visitor::*;
+use std::io::Write;
 
 #[derive(Copy, Clone)]
 pub struct Input<'a> {
@@ -12,10 +13,45 @@ pub trait Stage2 {
     type FinalReturnType;
 
     fn process_bof(&mut self, input_size_hint: Option<usize>);
+
     /// Returns the input index that must be preserved for next call.
     fn process_one(&mut self, input: Input, this_index: usize, next_index: usize) -> Result<usize, Error>;
 
     fn process_eof(&mut self) -> Result<Self::FinalReturnType, Error>;
+}
+
+pub trait WritingStage2<WriteT: Write> {
+    fn process_bof(&mut self, writer: &mut WriteT);
+
+    /// Returns the input index that must be preserved for next call.
+    fn process_one(&mut self, writer: &mut WriteT, input: Input, this_index: usize, next_index: usize) -> Result<usize, Error>;
+
+    fn process_eof(&mut self, writer: &mut WriteT) -> Result<(), Error>;
+}
+
+/// Adapter for a WritingStage2 to become a Stage2
+pub struct WritingStage2Adapter<'a, WritingStage2T, WriteT> {
+    writing_stage2: WritingStage2T,
+    writer: &'a mut WriteT,
+}
+
+impl<'a, WriteT: Write, WritingStage2T: WritingStage2<WriteT>> WritingStage2Adapter<'a, WritingStage2T, WriteT> {
+    pub fn new(writing_stage2: WritingStage2T, writer: &'a mut WriteT) -> Self {
+        Self { writing_stage2, writer }
+    }
+}
+
+impl<'a, WriteT: Write, WritingStage2T: WritingStage2<WriteT>> Stage2 for WritingStage2Adapter<'a, WritingStage2T, WriteT> {
+    type FinalReturnType = ();
+    fn process_bof(&mut self, _input_size_hint: Option<usize>) {
+        self.writing_stage2.process_bof(self.writer)
+    }
+    fn process_one(&mut self, input: Input, this_index: usize, next_index: usize) -> Result<usize, Error> {
+        self.writing_stage2.process_one(self.writer, input, this_index, next_index)
+    }
+    fn process_eof(&mut self) -> Result<Self::FinalReturnType, Error> {
+        self.writing_stage2.process_eof(self.writer)
+    }
 }
 
 /// Adapter for a Visitor to become a Stage2
@@ -135,6 +171,12 @@ impl<SexpFactoryT: SexpFactory> State<VisitorState<SimpleVisitor<SexpFactoryT>>>
 impl<VisitorT: Visitor> State<VisitorState<VisitorT>> {
     pub fn from_visitor(visitor: VisitorT) -> Self {
         Self::new(VisitorState::new(visitor))
+    }
+}
+
+impl<'a, WriteT: Write, WritingStage2T: WritingStage2<WriteT>> State<WritingStage2Adapter<'a, WritingStage2T, WriteT>> {
+    pub fn from_writing_stage2(writing_stage2: WritingStage2T, writer: &'a mut WriteT) -> Self {
+        Self::new(WritingStage2Adapter::new(writing_stage2, writer))
     }
 }
 
