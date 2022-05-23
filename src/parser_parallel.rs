@@ -94,7 +94,7 @@ struct WorkResult<ResultT> {
 
 /// The minimum size of a chunk. The first valid break point (new line) after
 /// this point will form the end of the chunk.
-const CHUNK_SIZE: usize = 1048576;
+const CHUNK_SIZE: usize = 256 * 1024;
 
 pub struct State<JoinerT> {
     joiner: JoinerT,
@@ -115,7 +115,7 @@ where
     }
 
     pub fn new(joiner: JoinerT) -> Self {
-        Self::with_num_threads(joiner, std::cmp::min(num_cpus::get_physical(), 8))
+        Self::with_num_threads(joiner, std::cmp::min(num_cpus::get_physical(), 6))
     }
 
     fn num_worker_threads(&self) -> usize {
@@ -261,6 +261,7 @@ where
                                     Some(split_index) => {
                                         next_work_unit.extend_from_slice(&buffer[..split_index]);
                                         work_unit_to_dispatch = Some(std::mem::take(&mut next_work_unit));
+                                        next_work_unit.reserve(CHUNK_SIZE * 2);
                                         next_work_unit.extend_from_slice(&buffer[split_index..]);
                                     },
                                     None => {
