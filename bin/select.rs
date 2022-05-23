@@ -16,5 +16,6 @@ fn main() {
     let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut stdin).unwrap();
     */
 
-    let () = select_parallel::process_streaming(select, &mut stdin, &mut stdout).unwrap();
+    let mut parser = select::make_parser(select, &mut stdout, select::OutputKind::Csv { atoms_as_sexps: false }, true);
+    let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut stdin).unwrap();
 }

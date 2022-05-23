@@ -12,8 +12,6 @@ pub mod ranges;
 pub mod rust_generator;
 pub mod rust_parser;
 pub mod select;
-#[cfg(feature = "threads")]
-pub mod select_parallel;
 pub mod start_stop_transitions;
 pub mod structural;
 pub mod utils;
