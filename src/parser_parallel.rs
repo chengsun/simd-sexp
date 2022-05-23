@@ -101,7 +101,7 @@ struct WorkResult<ResultT> {
 const CHUNK_SIZE: usize = 1048576;
 
 /// The number of worker threads to spawn.
-const N_THREADS: usize = 4;
+const N_THREADS: usize = 3;
 
 /// The maximum number of chunks ahead of the last fully-joined (in order) chunk
 /// that we're willing to start processing of.
@@ -126,6 +126,8 @@ where
         is_eof: &AtomicBool)
         -> Result<(), Error>
     {
+        #[cfg(feature = "vtune")] let domain = ittapi::Domain::new(std::thread::current().name().unwrap());
+
         let mut state = parser::State::new(stage2);
         loop {
             let work_unit = loop {
@@ -166,12 +168,16 @@ where
                 }
             };
 
+            #[cfg(feature = "vtune")] let task = ittapi::Task::begin(&domain, "work_unit");
             let result = state.process_all(parser::SegmentIndex::Segment(work_unit.index), &work_unit.buffer[..])?;
             results.push(WorkResult{ index: work_unit.index, result }).map_err(|_| ()).unwrap();
+            #[cfg(feature = "vtune")] task.end();
         }
     }
 
     pub fn process_streaming<'a, BufReadT : std::io::BufRead>(&'a mut self, buf_reader: &mut BufReadT) -> Result<JoinerT::FinalReturnType, Error> {
+        #[cfg(feature = "vtune")] let domain = ittapi::Domain::new("IO");
+
         self.joiner.process_bof(None);
         let work_queue = crossbeam_deque::Injector::new();
         let results_queue = crossbeam_queue::ArrayQueue::new(CHUNK_LOOKAHEAD);
@@ -185,16 +191,16 @@ where
             // TODO: if we return early in the main loop, nothing ever sets
             // is_eof to true, which means the other threads never die.
 
-            for _ in 0..N_THREADS {
+            for thread_index in 0..N_THREADS {
                 let stage2 = self.joiner.create_stage2();
                 // TODO: because we never actually steal a batch into the local
                 // worker queue, there's no actual use for [local_work_queue].
                 // Change one of these two facts.
                 let local_work_queue = crossbeam_deque::Worker::new_fifo();
-                scope.spawn(|_| {
+                scope.builder().name(format!("worker #{}", thread_index + 1)).spawn(|_| {
                     // TODO: figure out a better error handling story
                     Self::thread(stage2, local_work_queue, &work_queue, &results_queue, &is_eof).unwrap()
-                });
+                }).unwrap();
             }
 
             let mut next_work_unit = Vec::new();
@@ -209,9 +215,11 @@ where
                             debug_assert!(output_queue[rel_index].is_none());
                             output_queue[rel_index] = Some(result.result);
                             while let Some(Some(_)) = output_queue.front() {
+                                #[cfg(feature = "vtune")] let task = ittapi::Task::begin(&domain, "handle_output");
                                 let in_order_result = output_queue.pop_front().unwrap().unwrap();
                                 output_queue_start_index += 1;
                                 self.joiner.join(in_order_result)?;
+                                #[cfg(feature = "vtune")] task.end();
                             }
                         },
                     }
@@ -219,6 +227,7 @@ where
 
                 // handle one input, if we can
                 if !is_eof_local && output_queue.len() <= CHUNK_LOOKAHEAD {
+                    #[cfg(feature = "vtune")] let task = ittapi::Task::begin(&domain, "handle_input");
                     match buf_reader.fill_buf() {
                         Err(e) => { return Err(Error::IOError(e.kind())) },
                         Ok(&[]) => {
@@ -262,6 +271,7 @@ where
                             buf_reader.consume(len);
                         },
                     }
+                    #[cfg(feature = "vtune")] task.end();
                 } else {
                     if is_eof_local && output_queue.is_empty() {
                         break Ok(());
