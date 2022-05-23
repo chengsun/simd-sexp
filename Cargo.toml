@@ -37,11 +37,12 @@ harness = false
 [[bin]]
 name = "profile"
 path = "bin/profile.rs"
-required-features = ["vtune"]
+required-features = ["threads", "vtune"]
 
 [[bin]]
 name = "select"
 path = "bin/select.rs"
+required-features = ["threads"]
 
 [[bin]]
 name = "simplify"
