@@ -20,13 +20,13 @@ pub trait Stage2 {
     fn process_eof(&mut self) -> Result<Self::FinalReturnType, Error>;
 }
 
-pub trait WritingStage2<WriteT: Write> {
-    fn process_bof(&mut self, writer: &mut WriteT);
+pub trait WritingStage2 {
+    fn process_bof<WriteT: Write>(&mut self, writer: &mut WriteT);
 
     /// Returns the input index that must be preserved for next call.
-    fn process_one(&mut self, writer: &mut WriteT, input: Input, this_index: usize, next_index: usize) -> Result<usize, Error>;
+    fn process_one<WriteT: Write>(&mut self, writer: &mut WriteT, input: Input, this_index: usize, next_index: usize) -> Result<usize, Error>;
 
-    fn process_eof(&mut self, writer: &mut WriteT) -> Result<(), Error>;
+    fn process_eof<WriteT: Write>(&mut self, writer: &mut WriteT) -> Result<(), Error>;
 }
 
 /// Adapter for a WritingStage2 to become a Stage2
@@ -35,13 +35,13 @@ pub struct WritingStage2Adapter<'a, WritingStage2T, WriteT> {
     writer: &'a mut WriteT,
 }
 
-impl<'a, WriteT: Write, WritingStage2T: WritingStage2<WriteT>> WritingStage2Adapter<'a, WritingStage2T, WriteT> {
+impl<'a, WriteT: Write, WritingStage2T: WritingStage2> WritingStage2Adapter<'a, WritingStage2T, WriteT> {
     pub fn new(writing_stage2: WritingStage2T, writer: &'a mut WriteT) -> Self {
         Self { writing_stage2, writer }
     }
 }
 
-impl<'a, WriteT: Write, WritingStage2T: WritingStage2<WriteT>> Stage2 for WritingStage2Adapter<'a, WritingStage2T, WriteT> {
+impl<'a, WriteT: Write, WritingStage2T: WritingStage2> Stage2 for WritingStage2Adapter<'a, WritingStage2T, WriteT> {
     type FinalReturnType = ();
     fn process_bof(&mut self, _input_size_hint: Option<usize>) {
         self.writing_stage2.process_bof(self.writer)
@@ -174,7 +174,7 @@ impl<VisitorT: Visitor> State<VisitorState<VisitorT>> {
     }
 }
 
-impl<'a, WriteT: Write, WritingStage2T: WritingStage2<WriteT>> State<WritingStage2Adapter<'a, WritingStage2T, WriteT>> {
+impl<'a, WriteT: Write, WritingStage2T: WritingStage2> State<WritingStage2Adapter<'a, WritingStage2T, WriteT>> {
     pub fn from_writing_stage2(writing_stage2: WritingStage2T, writer: &'a mut WriteT) -> Self {
         Self::new(WritingStage2Adapter::new(writing_stage2, writer))
     }
