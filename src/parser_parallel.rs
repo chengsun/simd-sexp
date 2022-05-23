@@ -16,10 +16,6 @@ pub trait Stage2Joiner {
     fn process_eof(&mut self) -> Result<Self::FinalReturnType, Error>;
 }
 
-pub struct State<JoinerT> {
-    joiner: JoinerT,
-}
-
 /// An internal adapter used by [WritingJoiner].
 pub struct WritingStage2Adapter<WritingStage2> {
     buffer: Vec<u8>,
@@ -100,22 +96,30 @@ struct WorkResult<ResultT> {
 /// this point will form the end of the chunk.
 const CHUNK_SIZE: usize = 1048576;
 
-/// The number of worker threads to spawn.
-const N_THREADS: usize = 3;
-
-/// The maximum number of chunks ahead of the last fully-joined (in order) chunk
-/// that we're willing to start processing of.
-const CHUNK_LOOKAHEAD: usize = 10 * N_THREADS;
+pub struct State<JoinerT> {
+    joiner: JoinerT,
+    num_threads: usize,
+}
 
 impl<JoinerT: Stage2Joiner> State<JoinerT>
 where
     JoinerT::Stage2 : Send,
     <JoinerT::Stage2 as parser::Stage2>::FinalReturnType : Send
 {
-    pub fn new(joiner: JoinerT) -> Self {
+    pub fn with_num_threads(joiner: JoinerT, num_threads: usize) -> Self {
+        assert!(num_threads >= 2, "parser_parallel requires at least two threads: one for the I/O thread and at least one worker thread.");
         State {
             joiner,
+            num_threads,
         }
+    }
+
+    pub fn new(joiner: JoinerT) -> Self {
+        Self::with_num_threads(joiner, std::cmp::min(num_cpus::get_physical(), 8))
+    }
+
+    fn num_worker_threads(&self) -> usize {
+        self.num_threads - 1
     }
 
     fn thread(
@@ -180,8 +184,13 @@ where
 
         self.joiner.process_bof(None);
         let work_queue = crossbeam_deque::Injector::new();
-        let results_queue = crossbeam_queue::ArrayQueue::new(CHUNK_LOOKAHEAD);
-        let mut output_queue: VecDeque<Option<<JoinerT::Stage2 as parser::Stage2>::FinalReturnType>> = VecDeque::with_capacity(CHUNK_LOOKAHEAD);
+
+        // The maximum number of chunks ahead of the last fully-joined (in order) chunk
+        // that we're willing to start processing of.
+        let lookahead_num_chunks = self.num_worker_threads() * 10;
+
+        let results_queue = crossbeam_queue::ArrayQueue::new(lookahead_num_chunks);
+        let mut output_queue: VecDeque<Option<<JoinerT::Stage2 as parser::Stage2>::FinalReturnType>> = VecDeque::with_capacity(lookahead_num_chunks);
         let mut output_queue_start_index = 0;
 
         let is_eof = AtomicBool::new(false);
@@ -191,7 +200,7 @@ where
             // TODO: if we return early in the main loop, nothing ever sets
             // is_eof to true, which means the other threads never die.
 
-            for thread_index in 0..N_THREADS {
+            for thread_index in 0..self.num_worker_threads() {
                 let stage2 = self.joiner.create_stage2();
                 // TODO: because we never actually steal a batch into the local
                 // worker queue, there's no actual use for [local_work_queue].
@@ -226,7 +235,7 @@ where
                 }
 
                 // handle one input, if we can
-                if !is_eof_local && output_queue.len() <= CHUNK_LOOKAHEAD {
+                if !is_eof_local && output_queue.len() < output_queue.capacity() {
                     #[cfg(feature = "vtune")] let task = ittapi::Task::begin(&domain, "handle_input");
                     let mut work_unit_to_dispatch = None;
                     let mut just_reached_eof = false;

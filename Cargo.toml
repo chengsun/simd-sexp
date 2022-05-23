@@ -10,7 +10,7 @@ crate-type = ["lib", "staticlib"]
 [features]
 default = ["threads"]
 ocaml = ["dep:ocaml"]
-threads = ["dep:crossbeam-deque", "dep:crossbeam-queue", "dep:crossbeam-utils"]
+threads = ["dep:crossbeam-deque", "dep:crossbeam-queue", "dep:crossbeam-utils", "dep:num_cpus"]
 vtune = ["dep:ittapi", "dep:criterion"]
 
 [profile.bench]
@@ -23,6 +23,7 @@ crossbeam-queue = { version = "0.3", optional = true }
 crossbeam-utils = { version = "0.8", optional = true }
 ittapi = { version = "0.3", optional = true }
 memchr = "2"
+num_cpus = { version = "1", optional = true }
 ocaml = { version = "0.22", optional = true }
 
 [dev-dependencies]
