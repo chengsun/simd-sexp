@@ -1,6 +1,8 @@
 pub mod clmul;
 pub mod escape;
 pub mod escape_csv;
+#[cfg(feature = "threads")]
+pub mod exec_parallel;
 pub mod extract;
 pub mod find_quote_transitions;
 #[cfg(feature = "ocaml")]

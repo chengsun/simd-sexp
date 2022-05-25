@@ -281,7 +281,7 @@ impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
 
 pub fn make_parser<'a, KeysT: IntoIterator<Item = &'a [u8]>, ReadT: BufRead, WriteT: Write>
     (keys: KeysT, stdout: &'a mut WriteT, output_kind: OutputKind, threads: bool)
-    -> Box<dyn parser::StateI<ReadT, FinalReturnType = ()> + 'a>
+    -> Box<dyn parser::Stream<ReadT, Return = ()> + 'a>
 {
     let keys: Vec<&'a [u8]> = keys.into_iter().collect();
 

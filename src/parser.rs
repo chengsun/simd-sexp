@@ -19,14 +19,14 @@ pub enum SegmentIndex {
 }
 
 pub trait Stage2 {
-    type FinalReturnType;
+    type Return;
 
     fn process_bof(&mut self, segment_index: SegmentIndex, input_size_hint: Option<usize>);
 
     /// Returns the input index that must be preserved for next call.
     fn process_one(&mut self, input: Input, this_index: usize, next_index: usize) -> Result<usize, Error>;
 
-    fn process_eof(&mut self) -> Result<Self::FinalReturnType, Error>;
+    fn process_eof(&mut self) -> Result<Self::Return, Error>;
 }
 
 pub trait WritingStage2 {
@@ -55,14 +55,14 @@ impl<'a, WriteT: Write, WritingStage2T: WritingStage2> WritingStage2Adapter<'a, 
 }
 
 impl<'a, WriteT: Write, WritingStage2T: WritingStage2> Stage2 for WritingStage2Adapter<'a, WritingStage2T, WriteT> {
-    type FinalReturnType = ();
+    type Return = ();
     fn process_bof(&mut self, segment_index: SegmentIndex, _input_size_hint: Option<usize>) {
         self.writing_stage2.process_bof(self.writer, segment_index)
     }
     fn process_one(&mut self, input: Input, this_index: usize, next_index: usize) -> Result<usize, Error> {
         self.writing_stage2.process_one(self.writer, input, this_index, next_index)
     }
-    fn process_eof(&mut self) -> Result<Self::FinalReturnType, Error> {
+    fn process_eof(&mut self) -> Result<Self::Return, Error> {
         self.writing_stage2.process_eof(self.writer)
     }
 }
@@ -87,7 +87,7 @@ impl<VisitorT: Visitor> VisitorState<VisitorT> {
 }
 
 impl<VisitorT: Visitor> Stage2 for VisitorState<VisitorT> {
-    type FinalReturnType = VisitorT::FinalReturnType;
+    type Return = VisitorT::Return;
 
     fn process_bof(&mut self, _segment_index: SegmentIndex, input_size_hint: Option<usize>) {
         self.visitor.bof(input_size_hint);
@@ -137,7 +137,7 @@ impl<VisitorT: Visitor> Stage2 for VisitorState<VisitorT> {
         Ok(next_index)
     }
 
-    fn process_eof(&mut self) -> Result<VisitorT::FinalReturnType, Error> {
+    fn process_eof(&mut self) -> Result<VisitorT::Return, Error> {
         if self.context_stack.len() > 0 {
             return Err(Error::UnmatchedOpenParen);
         }
@@ -203,7 +203,7 @@ impl<Stage2T: Stage2> State<Stage2T> {
         }
     }
 
-    pub fn process_streaming<BufReadT : std::io::BufRead>(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Stage2T::FinalReturnType, Error> {
+    pub fn process_streaming<BufReadT : std::io::BufRead>(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Stage2T::Return, Error> {
         use structural::Classifier;
 
         let mut input_index = 0;
@@ -293,7 +293,7 @@ impl<Stage2T: Stage2> State<Stage2T> {
         }
     }
 
-    pub fn process_all(&mut self, segment_index: SegmentIndex, input: &[u8]) -> Result<Stage2T::FinalReturnType, Error> {
+    pub fn process_all(&mut self, segment_index: SegmentIndex, input: &[u8]) -> Result<Stage2T::Return, Error> {
         use structural::Classifier;
 
         let mut input_index = 0;
@@ -336,14 +336,26 @@ impl<Stage2T: Stage2> State<Stage2T> {
     }
 }
 
-pub trait StateI<BufReadT> {
-    type FinalReturnType;
-    fn process_streaming(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::FinalReturnType, Error>;
+pub trait Parse {
+    type Return;
+    fn process(&mut self, segment_index: SegmentIndex, input: &[u8]) -> Result<Self::Return, Error>;
 }
 
-impl<BufReadT: std::io::BufRead, Stage2T: Stage2> StateI<BufReadT> for State<Stage2T> {
-    type FinalReturnType = Stage2T::FinalReturnType;
-    fn process_streaming(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::FinalReturnType, Error> {
+impl<Stage2T: Stage2> Parse for State<Stage2T> {
+    type Return = Stage2T::Return;
+    fn process(&mut self, segment_index: SegmentIndex, input: &[u8]) -> Result<Self::Return, Error> {
+        self.process_all(segment_index, input)
+    }
+}
+
+pub trait Stream<BufReadT> {
+    type Return;
+    fn process_streaming(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::Return, Error>;
+}
+
+impl<BufReadT: std::io::BufRead, Stage2T: Stage2> Stream<BufReadT> for State<Stage2T> {
+    type Return = Stage2T::Return;
+    fn process_streaming(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::Return, Error> {
         self.process_streaming(segment_index, buf_reader)
     }
 }

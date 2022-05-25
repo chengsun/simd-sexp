@@ -1,4 +1,4 @@
-use crate::parser;
+use crate::parser::{self, Parse};
 use std::io::Write;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -6,17 +6,31 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub type Error = parser::Error;
 pub type Input<'a> = parser::Input<'a>;
 
-pub trait Stage2Joiner {
-    type Stage2 : parser::Stage2;
-    type FinalReturnType;
-
-    fn process_bof(&mut self, input_size_hint: Option<usize>);
-    fn create_stage2(&mut self) -> Self::Stage2;
-    fn join(&mut self, result: <Self::Stage2 as parser::Stage2>::FinalReturnType) -> Result<(), Error>;
-    fn process_eof(&mut self) -> Result<Self::FinalReturnType, Error>;
+pub struct WorkUnit {
+    index: usize,
+    buffer: Vec<u8>,
 }
 
-/// An internal adapter used by [WritingJoiner].
+/// A `Joiner` is a thing that knows how to spawn some `Worker`s that process
+/// segments of the sexp input in parallel, followed by some `join` operations
+/// which are called sequentially on the results of the workers (in the correct
+/// order).
+pub trait Joiner {
+    type Worker : Parse;
+    type Return;
+
+    fn process_bof(&mut self, input_size_hint: Option<usize>);
+    fn create_worker(&mut self) -> Self::Worker;
+    fn join(&mut self, result: <Self::Worker as Parse>::Return) -> Result<(), Error>;
+    fn process_eof(&mut self) -> Result<Self::Return, Error>;
+}
+
+/// Use this to turn a `WritingStage2` into a `Stage2` that operates on (and
+/// returns) `Vec<u8>` -- suitable for use with `WritingJoiner`.
+/// This differs from the adapter of the same name in `parser` in that it owns
+/// its own buffer (to which it writes), rather than writing to a mutable
+/// reference to an existing writer (which would not be suitable in a parallel
+/// worker situation.)
 pub struct WritingStage2Adapter<WritingStage2> {
     buffer: Vec<u8>,
     writing_stage2: WritingStage2,
@@ -30,7 +44,7 @@ impl<WritingStage2T: parser::WritingStage2> WritingStage2Adapter<WritingStage2T>
 }
 
 impl<WritingStage2T: parser::WritingStage2> parser::Stage2 for WritingStage2Adapter<WritingStage2T> {
-    type FinalReturnType = Vec<u8>;
+    type Return = Vec<u8>;
     #[inline(always)]
     fn process_bof(&mut self, segment_index: parser::SegmentIndex, input_size_hint: Option<usize>) {
         self.buffer.clear();
@@ -42,50 +56,48 @@ impl<WritingStage2T: parser::WritingStage2> parser::Stage2 for WritingStage2Adap
         self.writing_stage2.process_one(&mut self.buffer, input, this_index, next_index)
     }
     #[inline(always)]
-    fn process_eof(&mut self) -> Result<Self::FinalReturnType, parser::Error> {
+    fn process_eof(&mut self) -> Result<Self::Return, parser::Error> {
         let () = self.writing_stage2.process_eof(&mut self.buffer)?;
         Ok(std::mem::take(&mut self.buffer))
     }
 }
 
-pub struct WritingJoiner<'a, WriteT, WritingStage2T> {
-    create_writing_stage2: Box<dyn Fn() -> WritingStage2T + 'a>,
+/// A canonical implementation of a `Joiner` which is parameterised across all
+/// `Worker`s that return a `Vec<u8>`. This writes the resulting byte chunks to
+/// the given writer in the correct order.
+pub struct WritingJoiner<'a, WriteT, WorkerT> {
+    create_writing_worker: Box<dyn Fn() -> WorkerT + 'a>,
     writer: &'a mut WriteT,
 }
 
-impl<'a, WriteT: Write, WritingStage2T: parser::WritingStage2> WritingJoiner<'a, WriteT, WritingStage2T> {
-    fn new(create_writing_stage2: Box<dyn Fn() -> WritingStage2T + 'a>, writer: &'a mut WriteT) -> Self {
+impl<'a, WriteT: Write, WorkerT: Parse<Return = Vec<u8>>> WritingJoiner<'a, WriteT, WorkerT> {
+    fn new(create_writing_worker: Box<dyn Fn() -> WorkerT + 'a>, writer: &'a mut WriteT) -> Self {
         Self {
-            create_writing_stage2,
+            create_writing_worker,
             writer,
         }
     }
 }
 
-impl<'a, WriteT: Write, WritingStage2T: parser::WritingStage2> Stage2Joiner for WritingJoiner<'a, WriteT, WritingStage2T> {
-    type Stage2 = WritingStage2Adapter<WritingStage2T>;
-    type FinalReturnType = ();
+impl<'a, WriteT: Write, WorkerT: Parse<Return = Vec<u8>>> Joiner for WritingJoiner<'a, WriteT, WorkerT> {
+    type Worker = WorkerT;
+    type Return = ();
     fn process_bof(&mut self, _input_size_hint: Option<usize>) {
     }
-    fn create_stage2(&mut self) -> Self::Stage2 {
-        WritingStage2Adapter::new((self.create_writing_stage2)())
+    fn create_worker(&mut self) -> Self::Worker {
+        (self.create_writing_worker)()
     }
-    fn join(&mut self, result: <Self::Stage2 as parser::Stage2>::FinalReturnType) -> Result<(), Error> {
+    fn join(&mut self, result: <Self::Worker as Parse>::Return) -> Result<(), Error> {
         self.writer.write_all(&result[..]).map_err(|e| {
             Error::IOError(e.kind())
         })
     }
-    fn process_eof(&mut self) -> Result<Self::FinalReturnType, Error> {
+    fn process_eof(&mut self) -> Result<Self::Return, Error> {
         Ok(())
     }
 }
 
 // Start of main parallel parser implementation
-
-struct WorkUnit {
-    index: usize,
-    buffer: Vec<u8>,
-}
 
 struct WorkResult<ResultT> {
     index: usize,
@@ -101,10 +113,10 @@ pub struct State<JoinerT> {
     num_threads: usize,
 }
 
-impl<JoinerT: Stage2Joiner> State<JoinerT>
+impl<JoinerT: Joiner> State<JoinerT>
 where
-    JoinerT::Stage2 : Send,
-    <JoinerT::Stage2 as parser::Stage2>::FinalReturnType : Send
+    JoinerT::Worker : Send,
+    <JoinerT::Worker as Parse>::Return : Send
 {
     pub fn with_num_threads(joiner: JoinerT, num_threads: usize) -> Self {
         assert!(num_threads >= 2, "parser_parallel requires at least two threads: one for the I/O thread and at least one worker thread.");
@@ -123,16 +135,15 @@ where
     }
 
     fn thread(
-        stage2: JoinerT::Stage2,
+        mut parser: JoinerT::Worker,
         local: crossbeam_deque::Worker<WorkUnit>,
         global: &crossbeam_deque::Injector<WorkUnit>,
-        results: &crossbeam_queue::ArrayQueue<WorkResult<<JoinerT::Stage2 as parser::Stage2>::FinalReturnType>>,
+        results: &crossbeam_queue::ArrayQueue<WorkResult<<JoinerT::Worker as Parse>::Return>>,
         is_eof: &AtomicBool)
         -> Result<(), Error>
     {
         #[cfg(feature = "vtune")] let domain = ittapi::Domain::new(std::thread::current().name().unwrap());
 
-        let mut state = parser::State::new(stage2);
         loop {
             let work_unit = loop {
                 match local.pop() {
@@ -174,13 +185,13 @@ where
             };
 
             #[cfg(feature = "vtune")] let task = ittapi::Task::begin(&domain, "work_unit");
-            let result = state.process_all(parser::SegmentIndex::Segment(work_unit.index), &work_unit.buffer[..])?;
+            let result = parser.process(parser::SegmentIndex::Segment(work_unit.index), &work_unit.buffer[..])?;
             results.push(WorkResult{ index: work_unit.index, result }).map_err(|_| ()).unwrap();
             #[cfg(feature = "vtune")] task.end();
         }
     }
 
-    pub fn process_streaming<'a, BufReadT : std::io::BufRead>(&'a mut self, buf_reader: &mut BufReadT) -> Result<JoinerT::FinalReturnType, Error> {
+    pub fn process_streaming<'a, BufReadT : std::io::BufRead>(&'a mut self, buf_reader: &mut BufReadT) -> Result<JoinerT::Return, Error> {
         #[cfg(feature = "vtune")] let domain = ittapi::Domain::new("IO");
 
         self.joiner.process_bof(None);
@@ -191,7 +202,7 @@ where
         let lookahead_num_chunks = self.num_worker_threads() * 10;
 
         let results_queue = crossbeam_queue::ArrayQueue::new(lookahead_num_chunks);
-        let mut output_queue: VecDeque<Option<<JoinerT::Stage2 as parser::Stage2>::FinalReturnType>> = VecDeque::with_capacity(lookahead_num_chunks);
+        let mut output_queue: VecDeque<Option<<JoinerT::Worker as Parse>::Return>> = VecDeque::with_capacity(lookahead_num_chunks);
         let mut output_queue_start_index = 0;
 
         let is_eof = AtomicBool::new(false);
@@ -202,14 +213,14 @@ where
             // is_eof to true, which means the other threads never die.
 
             for thread_index in 0..self.num_worker_threads() {
-                let stage2 = self.joiner.create_stage2();
+                let worker = self.joiner.create_worker();
                 // TODO: because we never actually steal a batch into the local
                 // worker queue, there's no actual use for [local_work_queue].
                 // Change one of these two facts.
                 let local_work_queue = crossbeam_deque::Worker::new_fifo();
                 scope.builder().name(format!("worker #{}", thread_index + 1)).spawn(|_| {
                     // TODO: figure out a better error handling story
-                    Self::thread(stage2, local_work_queue, &work_queue, &results_queue, &is_eof).unwrap()
+                    Self::thread(worker, local_work_queue, &work_queue, &results_queue, &is_eof).unwrap()
                 }).unwrap();
             }
 
@@ -312,16 +323,25 @@ where
     }
 }
 
-impl<'a, WriteT: Write, WritingStage2T: parser::WritingStage2 + Send> State<WritingJoiner<'a, WriteT, WritingStage2T>> {
-    pub fn from_writing_stage2<F: Fn() -> WritingStage2T + 'a>(create_writing_stage2: F, writer: &'a mut WriteT) -> Self {
-        Self::new(WritingJoiner::new(Box::new(create_writing_stage2), writer))
+impl<'a, WriteT: Write, WorkerT: Parse<Return = Vec<u8>> + Send> State<WritingJoiner<'a, WriteT, WorkerT>> {
+    pub fn from_worker<F: Fn() -> WorkerT + 'a>(create_worker: F, writer: &'a mut WriteT) -> Self {
+        Self::new(WritingJoiner::new(Box::new(create_worker), writer))
     }
 }
 
-impl<BufReadT: std::io::BufRead, JoinerT: Stage2Joiner> parser::StateI<BufReadT> for State<JoinerT> where JoinerT::Stage2 : Send, <JoinerT::Stage2 as parser::Stage2>::FinalReturnType : Send
+impl<'a, WriteT: Write, WritingStage2T: parser::WritingStage2 + Send> State<WritingJoiner<'a, WriteT, parser::State<WritingStage2Adapter<WritingStage2T>>>> {
+    pub fn from_writing_stage2<F: Fn() -> WritingStage2T + 'a>(create_writing_stage2: F, writer: &'a mut WriteT) -> Self {
+        Self::from_worker(move || {
+            parser::State::new(WritingStage2Adapter::new(create_writing_stage2()))
+        }, writer)
+    }
+}
+
+impl<BufReadT: std::io::BufRead, JoinerT: Joiner> parser::Stream<BufReadT> for State<JoinerT>
+where JoinerT::Worker : Send, <JoinerT::Worker as Parse>::Return : Send
 {
-    type FinalReturnType = JoinerT::FinalReturnType;
-    fn process_streaming(&mut self, segment_index: parser::SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::FinalReturnType, Error> {
+    type Return = JoinerT::Return;
+    fn process_streaming(&mut self, segment_index: parser::SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::Return, Error> {
         match segment_index {
             parser::SegmentIndex::EntireFile => (),
             parser::SegmentIndex::Segment(_) => unimplemented!(),

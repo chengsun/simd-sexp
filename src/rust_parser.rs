@@ -152,7 +152,7 @@ pub struct TapeVisitorContext {
 impl visitor::Visitor for TapeVisitor {
     type IntermediateAtom = u32;
     type Context = TapeVisitorContext;
-    type FinalReturnType = Tape;
+    type Return = Tape;
 
     fn bof(&mut self, _input_size_hint: Option<usize>) {
     }
@@ -194,7 +194,7 @@ impl visitor::Visitor for TapeVisitor {
     }
 
     #[inline(always)]
-    fn eof(&mut self) -> Self::FinalReturnType {
+    fn eof(&mut self) -> Self::Return {
         std::mem::take(&mut self.tape)
     }
 }

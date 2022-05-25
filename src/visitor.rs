@@ -22,14 +22,14 @@ pub trait ReadVisitable {
 pub trait Visitor {
     type IntermediateAtom;
     type Context;
-    type FinalReturnType;
+    type Return;
     fn bof(&mut self, input_size_hint: Option<usize>);
     fn atom_reserve(&mut self, length_upper_bound: usize) -> Self::IntermediateAtom;
     fn atom_borrow<'a, 'b : 'a>(&'b mut self, atom: &'a mut Self::IntermediateAtom) -> &'a mut [u8];
     fn atom(&mut self, atom: Self::IntermediateAtom, length: usize, parent_context: Option<&mut Self::Context>);
     fn list_open(&mut self, parent_context: Option<&mut Self::Context>) -> Self::Context;
     fn list_close(&mut self, context: Self::Context, parent_context: Option<&mut Self::Context>);
-    fn eof(&mut self) -> Self::FinalReturnType;
+    fn eof(&mut self) -> Self::Return;
 }
 
 /// Adapter to allow a SexpFactory to become a Visitor
@@ -50,7 +50,7 @@ impl<SexpFactoryT: SexpFactory> SimpleVisitor<SexpFactoryT> {
 impl<SexpFactoryT: SexpFactory> Visitor for SimpleVisitor<SexpFactoryT> {
     type IntermediateAtom = Vec<u8>;
     type Context = usize;
-    type FinalReturnType = Vec<SexpFactoryT::Sexp>;
+    type Return = Vec<SexpFactoryT::Sexp>;
     fn bof(&mut self, _input_size_hint: Option<usize>) {
     }
     fn atom_reserve(&mut self, length_upper_bound: usize) -> Self::IntermediateAtom {
@@ -72,7 +72,7 @@ impl<SexpFactoryT: SexpFactory> Visitor for SimpleVisitor<SexpFactoryT> {
         let sexp = self.sexp_factory.list(inner);
         self.sexp_stack.push(sexp);
     }
-    fn eof(&mut self) -> Self::FinalReturnType {
+    fn eof(&mut self) -> Self::Return {
         std::mem::take(&mut self.sexp_stack)
     }
 }
