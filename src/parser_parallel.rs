@@ -163,6 +163,7 @@ where
                                 if is_eof {
                                     return Ok(());
                                 } else {
+                                    // TODO: use crossbeam_utils::sync::Parker
                                     std::hint::spin_loop();
                                     continue;
                                 };
@@ -221,7 +222,12 @@ where
                 // handle all outputs
                 loop {
                     match results_queue.pop() {
-                        None => { break; },
+                        None => {
+                            // TODO: use crossbeam_utils::sync::Parker (once
+                            // split into its own thread), or change
+                            // results_queue to a crossbeam_channel::bounded
+                            break;
+                        },
                         Some(result) => {
                             let rel_index = result.index - output_queue_start_index;
                             debug_assert!(output_queue[rel_index].is_none());
