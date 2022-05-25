@@ -214,6 +214,9 @@ where
 
             let mut next_work_unit = Vec::new();
             let mut next_work_unit_index = 0;
+            // TODO: because I/O are currently interleaved in one thread, if
+            // input blocks then we may not see output in a timely fashion.
+            // Split into two threads
             loop {
                 // handle all outputs
                 loop {
