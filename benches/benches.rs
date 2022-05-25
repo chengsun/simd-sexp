@@ -12,13 +12,13 @@ fn bench_parser(c: &mut Criterion) {
         group.bench_function("rust-sexp",
                              |b| b.iter(|| {
                                  let mut parser = parser::State::from_sexp_factory(rust_parser::SexpFactory::new());
-                                 let result = parser.process_all(input_pp).unwrap();
+                                 let result = parser.process_all(parser::SegmentIndex::EntireFile, input_pp).unwrap();
                                  black_box(result)
                              }));
         group.bench_function("rust-tape",
                              |b| b.iter(|| {
                                  let mut parser = parser::State::from_visitor(rust_parser::TapeVisitor::new());
-                                 let result = parser.process_all(input_pp).unwrap();
+                                 let result = parser.process_all(parser::SegmentIndex::EntireFile,input_pp).unwrap();
                                  black_box(result)
                              }));
         group.finish();
@@ -33,13 +33,13 @@ fn bench_parser(c: &mut Criterion) {
         group.bench_function("rust-sexp",
                              |b| b.iter(|| {
                                  let mut parser = parser::State::from_sexp_factory(rust_parser::SexpFactory::new());
-                                 let result = parser.process_all(input_mach).unwrap();
+                                 let result = parser.process_all(parser::SegmentIndex::EntireFile,input_mach).unwrap();
                                  black_box(result)
                              }));
         group.bench_function("rust-tape",
                              |b| b.iter(|| {
                                  let mut parser = parser::State::from_visitor(rust_parser::TapeVisitor::new());
-                                 let result = parser.process_all(input_mach).unwrap();
+                                 let result = parser.process_all(parser::SegmentIndex::EntireFile,input_mach).unwrap();
                                  black_box(result)
                              }));
         group.finish();
