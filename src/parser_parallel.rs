@@ -318,9 +318,10 @@ impl<'a, WriteT: Write, WritingStage2T: parser::WritingStage2 + Send> State<Writ
     }
 }
 
-impl<BufReadT: std::io::BufRead, FinalReturnType: Send, JoinerT: Stage2Joiner<FinalReturnType = FinalReturnType>> parser::StateI<FinalReturnType, BufReadT> for State<JoinerT> where JoinerT::Stage2 : Send, <JoinerT::Stage2 as parser::Stage2>::FinalReturnType : Send
+impl<BufReadT: std::io::BufRead, JoinerT: Stage2Joiner> parser::StateI<BufReadT> for State<JoinerT> where JoinerT::Stage2 : Send, <JoinerT::Stage2 as parser::Stage2>::FinalReturnType : Send
 {
-    fn process_streaming(&mut self, segment_index: parser::SegmentIndex, buf_reader: &mut BufReadT) -> Result<FinalReturnType, Error> {
+    type FinalReturnType = JoinerT::FinalReturnType;
+    fn process_streaming(&mut self, segment_index: parser::SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::FinalReturnType, Error> {
         match segment_index {
             parser::SegmentIndex::EntireFile => (),
             parser::SegmentIndex::Segment(_) => unimplemented!(),

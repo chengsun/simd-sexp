@@ -336,12 +336,14 @@ impl<Stage2T: Stage2> State<Stage2T> {
     }
 }
 
-pub trait StateI<FinalReturnType, BufReadT> {
-    fn process_streaming(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<FinalReturnType, Error>;
+pub trait StateI<BufReadT> {
+    type FinalReturnType;
+    fn process_streaming(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::FinalReturnType, Error>;
 }
 
-impl<BufReadT: std::io::BufRead, FinalReturnType, Stage2T: Stage2<FinalReturnType = FinalReturnType>> StateI<FinalReturnType, BufReadT> for State<Stage2T> {
-    fn process_streaming(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<FinalReturnType, Error> {
+impl<BufReadT: std::io::BufRead, Stage2T: Stage2> StateI<BufReadT> for State<Stage2T> {
+    type FinalReturnType = Stage2T::FinalReturnType;
+    fn process_streaming(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::FinalReturnType, Error> {
         self.process_streaming(segment_index, buf_reader)
     }
 }
