@@ -184,3 +184,9 @@ module Select = struct
     _multi_select select_keys output_kind threads
   ;;
 end
+
+module Exec = struct
+  external _exec_parallel : string -> string list -> unit = "ml_exec_parallel"
+
+  let exec_parallel ~prog ~args = _exec_parallel prog args
+end

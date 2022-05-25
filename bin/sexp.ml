@@ -67,10 +67,21 @@ let cmd_multi_select =
      fun () -> Simd_sexp.Select.multi_select ~select_keys ~output_kind ~threads)
 ;;
 
+let cmd_exec =
+  Command.basic
+    ~summary:"Run filter command (that accepts sexps in stdin) in parallel"
+    (let%map_open.Command prog = anon ("PROG" %: string)
+     and args = anon (non_empty_sequence_as_list ("ARGS" %: string)) in
+     fun () -> Simd_sexp.Exec.exec_parallel ~prog ~args)
+;;
+
 let command =
   Command.group
     ~summary:"sexp tool"
-    [ "profile-test", cmd_profile_test; "multi-select", cmd_multi_select ]
+    [ "exec", cmd_exec
+    ; "multi-select", cmd_multi_select
+    ; "profile-test", cmd_profile_test
+    ]
 ;;
 
 let () = Command_unix.run command

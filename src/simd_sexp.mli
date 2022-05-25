@@ -35,3 +35,7 @@ module Select : sig
     -> threads:bool
     -> unit
 end
+
+module Exec : sig
+  val exec_parallel : prog:string -> args:string list -> unit
+end
