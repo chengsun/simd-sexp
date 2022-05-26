@@ -45,6 +45,11 @@ path = "bin/select.rs"
 required-features = ["threads"]
 
 [[bin]]
+name = "exec"
+path = "bin/exec.rs"
+required-features = ["threads"]
+
+[[bin]]
 name = "simplify"
 path = "bin/simplify.rs"
 
