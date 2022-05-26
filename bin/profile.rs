@@ -1,3 +1,5 @@
+use std::ffi::{OsStr, OsString};
+
 use simd_sexp::*;
 
 struct LoopReader<'a> {
@@ -130,8 +132,42 @@ fn main() {
             }
         },
 
+        Some("exec") => {
+            let event_frame = ittapi::Event::new("frame");
+
+            let prog = OsString::from("sexp".to_owned());
+            let args = vec![OsString::from("select".to_owned()), OsString::from("libraries".to_owned())];
+            let args: Vec<&OsStr> = args.iter().map(|s| &s[..]).collect();
+            let exec_worker = exec_parallel::ExecWorker::new(&prog, &args);
+
+            println!("Warmup");
+
+            {
+                let mut read = LoopReader::new(&input_pp[..], 4000);
+                let mut result = Vec::new();
+                let mut parser = exec_parallel::make_parser(exec_worker.clone(), &mut result);
+                let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut read).unwrap();
+                std::mem::drop(parser);
+                criterion::black_box(result);
+            }
+
+            println!("Profiling");
+
+            {
+                let mut read = LoopReader::new(&input_pp[..], 4000);
+                let e = event_frame.start();
+                let mut result = Vec::new();
+                let mut parser = exec_parallel::make_parser(exec_worker.clone(), &mut result);
+                let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut read).unwrap();
+                std::mem::drop(parser);
+                criterion::black_box(result);
+                std::mem::drop(e);
+            }
+        },
+
+
         arg => {
-            println!("Not profiling. In order to profile, pass \"tape\" or \"select\" as an argument.");
+            println!("Not profiling. In order to profile, pass \"tape\" or \"select\" or \"exec\" as an argument.");
             println!("You passed: {:?}", arg);
         },
     }
