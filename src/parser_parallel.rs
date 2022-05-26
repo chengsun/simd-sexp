@@ -150,8 +150,8 @@ where
                 Ok(work_unit) => {
                     #[cfg(feature = "vtune")] let task = ittapi::Task::begin(&domain, "work_unit");
                     let result = parser.process(parser::SegmentIndex::Segment(work_unit.index), &work_unit.buffer[..])?;
-                    results_send.send(WorkResult{ index: work_unit.index, result }).map_err(|_| ()).unwrap();
                     #[cfg(feature = "vtune")] task.end();
+                    results_send.send(WorkResult{ index: work_unit.index, result }).map_err(|_| ()).unwrap();
                 },
                 Err(crossbeam_channel::RecvError) => { return Ok(()); }
             }
@@ -209,13 +209,13 @@ where
                 }
             }
 
+            #[cfg(feature = "vtune")] task.end();
+
             let work_unit_to_dispatch = work_unit_to_dispatch.unwrap();
             let work_unit_index = next_work_unit_index;
             work_send.send(WorkUnit { index: work_unit_index, buffer: work_unit_to_dispatch }).unwrap();
 
             next_work_unit_index += 1;
-
-            #[cfg(feature = "vtune")] task.end();
 
             if just_reached_eof {
                 return Ok(());
