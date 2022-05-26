@@ -279,7 +279,7 @@ impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
     }
 }
 
-pub fn make_parser<'a, KeysT: IntoIterator<Item = &'a [u8]>, ReadT: BufRead, WriteT: Write>
+pub fn make_parser<'a, KeysT: IntoIterator<Item = &'a [u8]>, ReadT: BufRead + Send, WriteT: Write>
     (keys: KeysT, stdout: &'a mut WriteT, output_kind: OutputKind, threads: bool)
     -> Box<dyn parser::Stream<ReadT, Return = ()> + 'a>
 {

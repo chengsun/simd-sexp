@@ -47,7 +47,7 @@ impl<'a> parser::Parse for ExecWorker<'a> {
     }
 }
 
-pub fn make_parser<'a, ReadT: BufRead, WriteT: Write>
+pub fn make_parser<'a, ReadT: BufRead + Send, WriteT: Write>
     (params: ExecWorker<'a>, stdout: &'a mut WriteT)
      -> Box<dyn parser::Stream<ReadT, Return = ()> + 'a>
 {
