@@ -136,7 +136,6 @@ where
 
     fn thread(
         mut parser: JoinerT::Worker,
-        local: crossbeam_deque::Worker<WorkUnit>,
         global: &crossbeam_deque::Injector<WorkUnit>,
         results: &crossbeam_queue::ArrayQueue<WorkResult<<JoinerT::Worker as Parse>::Return>>,
         is_eof: &AtomicBool)
@@ -146,41 +145,33 @@ where
 
         loop {
             let work_unit = loop {
-                match local.pop() {
-                    Some(work_unit) => {
-                        break work_unit;
-                    },
+                // We load the atomic bool here, with "acquire" ordering, which
+                // means that if this is true, we're guaranteed that all of the
+                // work in the queue that was inserted prior to EOF are visible
+                // to this thread.
+                //
+                // Note that this is the latest we can load this with acquire
+                // ordering -- in particular it would not be correct only to
+                // check is_eof after we have obtained a steal_result of None.
+                let is_eof = is_eof.load(Ordering::Acquire);
+                let mut steal_result;
+                loop {
+                    steal_result = global.steal();
+                    if !steal_result.is_retry() {
+                        break;
+                    }
+                }
+                match steal_result.success() {
+                    Some(work_unit) => { break work_unit; },
                     None => {
-                        // We load the atomic bool here, with "acquire"
-                        // ordering, which means that if this is true, we're
-                        // guaranteed that all of the work in the queue that was
-                        // inserted prior to EOF are visible to this thread.
-                        //
-                        // Note that this is the latest we can load this with
-                        // acquire ordering -- in particular it would not be
-                        // correct only to check is_eof after we have obtained a
-                        // steal_result of None.
-                        let is_eof = is_eof.load(Ordering::Acquire);
-                        let mut steal_result;
-                        loop {
-                            steal_result = global.steal();
-                            if !steal_result.is_retry() {
-                                break;
-                            }
-                        }
-                        match steal_result.success() {
-                            Some(work_unit) => { break work_unit; },
-                            None => {
-                                if is_eof {
-                                    return Ok(());
-                                } else {
-                                    // TODO: use crossbeam_utils::sync::Parker
-                                    std::hint::spin_loop();
-                                    continue;
-                                };
-                            }
-                        }
-                    },
+                        if is_eof {
+                            return Ok(());
+                        } else {
+                            // TODO: use crossbeam_utils::sync::Parker
+                            std::hint::spin_loop();
+                            continue;
+                        };
+                    }
                 }
             };
 
@@ -214,13 +205,9 @@ where
 
             for thread_index in 0..self.num_worker_threads() {
                 let worker = self.joiner.create_worker();
-                // TODO: because we never actually steal a batch into the local
-                // worker queue, there's no actual use for [local_work_queue].
-                // Change one of these two facts.
-                let local_work_queue = crossbeam_deque::Worker::new_fifo();
                 scope.builder().name(format!("worker #{}", thread_index + 1)).spawn(|_| {
                     // TODO: figure out a better error handling story
-                    Self::thread(worker, local_work_queue, &work_queue, &results_queue, &is_eof).unwrap()
+                    Self::thread(worker, &work_queue, &results_queue, &is_eof).unwrap()
                 }).unwrap();
             }
 
