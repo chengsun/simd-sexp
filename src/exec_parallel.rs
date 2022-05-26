@@ -1,6 +1,6 @@
 use crate::parser;
 use crate::parser_parallel;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 use std::io::{BufRead, Write};
 use std::process::{Command, Stdio};
 
@@ -11,7 +11,7 @@ pub struct ExecWorker<'a> {
 }
 
 impl<'a> ExecWorker<'a> {
-    fn new(prog: &'a OsStr, args:&'a [&'a OsStr]) -> Self {
+    pub fn new(prog: &'a OsStr, args:&'a [&'a OsStr]) -> Self {
         Self { prog, args }
     }
 }
@@ -60,6 +60,7 @@ pub fn make_parser<'a, ReadT: BufRead + Send, WriteT: Write>
 mod ocaml_ffi {
     use super::*;
     use std::collections::LinkedList;
+    use std::ffi::OsString;
     use crate::utils;
 
     struct OCamlOsString(OsString);

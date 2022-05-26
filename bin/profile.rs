@@ -110,7 +110,9 @@ fn main() {
             {
                 let mut read = LoopReader::new(&input_pp[..], 40000);
                 let mut result = Vec::new();
-                let () = select_parallel::process_streaming(keys, &mut read, &mut result).unwrap();
+                let mut parser = select::make_parser(keys, &mut result, select::OutputKind::Csv { atoms_as_sexps: false }, true);
+                let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut read).unwrap();
+                std::mem::drop(parser);
                 criterion::black_box(result);
             }
 
@@ -120,7 +122,9 @@ fn main() {
                 let mut read = LoopReader::new(&input_pp[..], 40000);
                 let e = event_frame.start();
                 let mut result = Vec::new();
-                let () = select_parallel::process_streaming(keys, &mut read, &mut result).unwrap();
+                let mut parser = select::make_parser(keys, &mut result, select::OutputKind::Csv { atoms_as_sexps: false }, true);
+                let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut read).unwrap();
+                std::mem::drop(parser);
                 criterion::black_box(result);
                 std::mem::drop(e);
             }
