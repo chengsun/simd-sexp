@@ -53,7 +53,7 @@ pub fn make_parser<'a, ReadT: BufRead + Send, WriteT: Write>
 {
     Box::new(parser_parallel::State::from_worker(move || {
         params.clone()
-    }, stdout))
+    }, stdout, 10 * 1024 * 1024))
 }
 
 #[cfg(feature = "ocaml")]

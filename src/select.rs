@@ -287,19 +287,20 @@ pub fn make_parser<'a, KeysT: IntoIterator<Item = &'a [u8]>, ReadT: BufRead + Se
 
     #[cfg(feature = "threads")]
     if threads {
+        let chunk_size = 256 * 1024;
         return match output_kind {
             OutputKind::Values =>
                 Box::new(parser_parallel::State::from_writing_stage2(move || {
                     Stage2::new(keys.iter().map(|x| *x), OutputValues::new())
-                }, stdout)),
+                }, stdout, chunk_size)),
             OutputKind::Labeled =>
                 Box::new(parser_parallel::State::from_writing_stage2(move || {
                     Stage2::new(keys.iter().map(|x| *x), OutputLabeled::new())
-                }, stdout)),
+                }, stdout, chunk_size)),
             OutputKind::Csv { atoms_as_sexps } =>
                 Box::new(parser_parallel::State::from_writing_stage2(move || {
                     Stage2::new(keys.iter().map(|x| *x), OutputCsv::new(atoms_as_sexps))
-                }, stdout)),
+                }, stdout, chunk_size)),
         };
     }
 

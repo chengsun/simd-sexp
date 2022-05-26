@@ -103,12 +103,14 @@ struct WorkResult<ResultT> {
     result: ResultT,
 }
 
-/// The minimum size of a chunk. The first valid break point (new line) after
-/// this point will form the end of the chunk.
-const CHUNK_SIZE: usize = 256 * 1024;
 
 pub struct State<JoinerT> {
     joiner: JoinerT,
+
+    /// The minimum size of a chunk. The first valid break point (new line) after
+    /// this point will form the end of the chunk.
+    chunk_size: usize,
+
     num_threads: usize,
 }
 
@@ -117,17 +119,18 @@ where
     JoinerT::Worker : Send,
     <JoinerT::Worker as Parse>::Return : Send
 {
-    pub fn with_num_threads(joiner: JoinerT, num_threads: usize) -> Self {
+    pub fn with_num_threads(joiner: JoinerT, chunk_size: usize, num_threads: usize) -> Self {
         assert!(num_threads >= 3, "parser_parallel requires at least three threads: two for I/O and at least one worker thread.");
         State {
             joiner,
+            chunk_size,
             num_threads,
         }
     }
 
-    pub fn new(joiner: JoinerT) -> Self {
+    pub fn new(joiner: JoinerT, chunk_size: usize) -> Self {
         let desired_num_threads = num_cpus::get_physical() + 1; // + 1 because it's not uncommon for the output thread to be idle most of the time
-        Self::with_num_threads(joiner, std::cmp::min(std::cmp::max(desired_num_threads, 3), 6))
+        Self::with_num_threads(joiner, chunk_size, std::cmp::min(std::cmp::max(desired_num_threads, 3), 6))
     }
 
     fn num_worker_threads(&self) -> usize {
@@ -157,7 +160,8 @@ where
 
     fn input_thread<BufReadT : std::io::BufRead>(
         work_send: crossbeam_channel::Sender<WorkUnit>,
-        buf_reader: &mut BufReadT)
+        buf_reader: &mut BufReadT,
+        chunk_size: usize)
         -> Result<(), Error>
     {
         #[cfg(feature = "vtune")] let domain = ittapi::Domain::new("input");
@@ -180,8 +184,8 @@ where
                     Ok(buffer) => {
                         let len = buffer.len();
                         let split_index =
-                            if next_work_unit.len() + len > CHUNK_SIZE {
-                                let offset = CHUNK_SIZE.saturating_sub(next_work_unit.len());
+                            if next_work_unit.len() + len > chunk_size {
+                                let offset = chunk_size.saturating_sub(next_work_unit.len());
                                 memchr::memchr_iter(b'\n', &(*buffer)[offset..])
                                     .map(|x| x + offset)
                                     .find(|split_index| { split_index + 1 < len && buffer[split_index + 1] != b' ' })
@@ -192,7 +196,7 @@ where
                             Some(split_index) => {
                                 next_work_unit.extend_from_slice(&buffer[..split_index]);
                                 work_unit_to_dispatch = Some(std::mem::take(&mut next_work_unit));
-                                next_work_unit.reserve(CHUNK_SIZE * 2);
+                                next_work_unit.reserve(chunk_size + 16 * 1024);
                                 next_work_unit.extend_from_slice(&buffer[split_index..]);
                             },
                             None => {
@@ -266,7 +270,7 @@ where
 
         let threads_result = crossbeam_utils::thread::scope(|scope| {
             scope.builder().name("input".to_owned()).spawn(|_| {
-                Self::input_thread(work_send, buf_reader).unwrap();
+                Self::input_thread(work_send, buf_reader, self.chunk_size).unwrap();
             }).unwrap();
 
             for thread_index in 0..self.num_worker_threads() {
@@ -289,16 +293,16 @@ where
 }
 
 impl<'a, WriteT: Write, WorkerT: Parse<Return = Vec<u8>> + Send> State<WritingJoiner<'a, WriteT, WorkerT>> {
-    pub fn from_worker<F: Fn() -> WorkerT + 'a>(create_worker: F, writer: &'a mut WriteT) -> Self {
-        Self::new(WritingJoiner::new(Box::new(create_worker), writer))
+    pub fn from_worker<F: Fn() -> WorkerT + 'a>(create_worker: F, writer: &'a mut WriteT, chunk_size: usize) -> Self {
+        Self::new(WritingJoiner::new(Box::new(create_worker), writer), chunk_size)
     }
 }
 
 impl<'a, WriteT: Write, WritingStage2T: parser::WritingStage2 + Send> State<WritingJoiner<'a, WriteT, parser::State<WritingStage2Adapter<WritingStage2T>>>> {
-    pub fn from_writing_stage2<F: Fn() -> WritingStage2T + 'a>(create_writing_stage2: F, writer: &'a mut WriteT) -> Self {
+    pub fn from_writing_stage2<F: Fn() -> WritingStage2T + 'a>(create_writing_stage2: F, writer: &'a mut WriteT, chunk_size: usize) -> Self {
         Self::from_worker(move || {
             parser::State::new(WritingStage2Adapter::new(create_writing_stage2()))
-        }, writer)
+        }, writer, chunk_size)
     }
 }
 
