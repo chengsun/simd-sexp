@@ -4,6 +4,8 @@ use core::arch::x86::*;
 use core::arch::x86_64::*;
 
 use crate::clmul;
+use crate::ranges::{range_starts, range_transitions};
+use crate::utils::print_bitmask_le;
 use crate::xor_masked_adjacent;
 
 pub trait StartStopTransitions {
@@ -77,6 +79,162 @@ pub fn runtime_detect() -> Box<dyn StartStopTransitions> {
         Some(start_stop_transitions) => { return Box::new(start_stop_transitions); }
     }
     Box::new(Generic::new(clmul::runtime_detect(), xor_masked_adjacent::runtime_detect()))
+}
+
+pub fn naive_stg_asdf(a: u64, bplus: u64, bminus: u64, verbose: bool) -> u64 {
+    let mut state = 0;
+    let mut result = 0u64;
+    for i in 0..64 {
+        let bit = 1u64 << i;
+        if a & bit != 0 {
+            if state == 0 {
+                state = 1;
+                result |= bit;
+            } else if state == 1 {
+                state = 0;
+                result |= bit;
+            }
+        } else if bplus & bit != 0 {
+            if state == 0 {
+                state = 2;
+                result |= bit;
+            }
+        } else if bminus & bit != 0 {
+            if state == 2 {
+                state = 0;
+                result |= bit;
+            }
+        }
+    }
+
+    if verbose {
+        print!("A:         ");
+        print_bitmask_le(a, 64);
+        print!("B+:        ");
+        print_bitmask_le(bplus, 64);
+        print!("B-:        ");
+        print_bitmask_le(bminus, 64);
+        print!("Result:    ");
+        print_bitmask_le(result, 64);
+    }
+
+    result
+}
+
+fn end_of_selected_region(region: u64, selector: u64) -> u64 {
+    region & !(region.wrapping_sub(selector))
+}
+
+#[test]
+fn end_of_selected_region_test_1() {
+    use crate::utils::bitrev64;
+    assert_eq!(end_of_selected_region(bitrev64(0b100010001), bitrev64(0b001000000)), bitrev64(0b000010000));
+}
+
+#[inline(never)]
+#[target_feature(enable = "bmi2,sse2,pclmulqdq")]
+pub unsafe fn stg_asdf(a: u64, bplus: u64, bminus: u64, verbose: bool) -> u64 {
+    use crate::clmul::Clmul;
+    let clmul = clmul::Sse2Pclmulqdq::new().unwrap();
+    let start_stop_transitions = Bmi2::new().unwrap();
+    let j_a_assume_aplus = clmul.clmul(a);
+    let j_a_assume_aminus = clmul.clmul(a) ^ !0;
+    let aplus_assume_aplus = range_starts(j_a_assume_aplus, false);
+    let aplus_assume_aminus = range_starts(j_a_assume_aminus, true);
+    let aminus_assume_aplus = aplus_assume_aminus;
+    let aminus_assume_aminus = aplus_assume_aplus;
+    let (tj_b, _) = start_stop_transitions.start_stop_transitions(bplus, bminus, false);
+    let j_b = clmul.clmul(tj_b);
+    let j_assume_aplus = j_a_assume_aplus | j_b;
+    let j_assume_aminus = j_a_assume_aminus | j_b;
+    let k_assume_aplus = range_starts(j_assume_aplus, false);
+    let k_assume_aminus = range_starts(j_assume_aminus, false);
+    let (tl_a_assume_aplus, _) = start_stop_transitions.start_stop_transitions(aplus_assume_aplus & k_assume_aplus, aminus_assume_aplus, false);
+    let (tl_a_assume_aminus, _) = start_stop_transitions.start_stop_transitions(aplus_assume_aminus & k_assume_aminus, aminus_assume_aminus, false);
+    let (tl_b_assume_aplus, _) = start_stop_transitions.start_stop_transitions(bplus & k_assume_aplus, bminus, false);
+    let (tl_b_assume_aminus, _) = start_stop_transitions.start_stop_transitions(bplus & k_assume_aminus, bminus, false);
+    let l_a_assume_aplus = clmul.clmul(tl_a_assume_aplus);
+    let l_a_assume_aminus = clmul.clmul(tl_a_assume_aminus);
+    let l_b_assume_aplus = clmul.clmul(tl_b_assume_aplus);
+    let l_b_assume_aminus = clmul.clmul(tl_b_assume_aminus);
+    let l_assume_aplus = l_a_assume_aplus | l_b_assume_aplus;
+    let l_assume_aminus = l_a_assume_aminus | l_b_assume_aminus;
+    let m_assume_aplus = range_transitions(l_assume_aplus, false);
+    let m_assume_aminus = range_transitions(l_assume_aminus, false);
+    let switch_assume_aplus = end_of_selected_region(m_assume_aplus, aplus_assume_aplus & !m_assume_aplus) << 1;
+    let switch_assume_aminus = end_of_selected_region(m_assume_aminus, aplus_assume_aminus & !m_assume_aminus) << 1;
+    let (taplus_is_what_to_assume, _) = start_stop_transitions.start_stop_transitions(switch_assume_aminus, switch_assume_aplus, true);
+    let aplus_is_what_to_assume = clmul.clmul(taplus_is_what_to_assume) ^ !0;
+    let result = (m_assume_aplus & aplus_is_what_to_assume) | (m_assume_aminus & !aplus_is_what_to_assume);
+
+    if verbose {
+
+        print!("If a+, a+: ");
+        print_bitmask_le(aplus_assume_aplus, 64);
+        print!("If a+, a-: ");
+        print_bitmask_le(aminus_assume_aplus, 64);
+        print!("If a+, b+: ");
+        print_bitmask_le(bplus, 64);
+        print!("If a+, b-: ");
+        print_bitmask_le(bminus, 64);
+        print!("If a+, Ja: ");
+        print_bitmask_le(j_a_assume_aplus, 64);
+        print!("If a+, Jb: ");
+        print_bitmask_le(j_b, 64);
+        print!("If a+, J:  ");
+        print_bitmask_le(j_assume_aplus, 64);
+        print!("If a+, K:  ");
+        print_bitmask_le(k_assume_aplus, 64);
+        print!("If a+, La: ");
+        print_bitmask_le(l_a_assume_aplus, 64);
+        print!("If a+, Lb: ");
+        print_bitmask_le(l_b_assume_aplus, 64);
+        print!("If a+, L:  ");
+        print_bitmask_le(l_assume_aplus, 64);
+        print!("If a+, M:  ");
+        print_bitmask_le(m_assume_aplus, 64);
+        print!("If a+, Sw: ");
+        print_bitmask_le(switch_assume_aplus, 64);
+
+        println!("");
+
+        print!("If a-, a+: ");
+        print_bitmask_le(aplus_assume_aminus, 64);
+        print!("If a-, a-: ");
+        print_bitmask_le(aminus_assume_aminus, 64);
+        print!("If a-, b+: ");
+        print_bitmask_le(bplus, 64);
+        print!("If a-, b-: ");
+        print_bitmask_le(bminus, 64);
+        print!("If a-, Ja: ");
+        print_bitmask_le(j_a_assume_aminus, 64);
+        print!("If a-, Jb: ");
+        print_bitmask_le(j_b, 64);
+        print!("If a-, J:  ");
+        print_bitmask_le(j_assume_aminus, 64);
+        print!("If a-, K:  ");
+        print_bitmask_le(k_assume_aminus, 64);
+        print!("If a-, La: ");
+        print_bitmask_le(l_a_assume_aminus, 64);
+        print!("If a-, Lb: ");
+        print_bitmask_le(l_b_assume_aminus, 64);
+        print!("If a-, L:  ");
+        print_bitmask_le(l_assume_aminus, 64);
+        print!("If a-, M:  ");
+        print_bitmask_le(m_assume_aminus, 64);
+        print!("If a-, Sw: ");
+        print_bitmask_le(switch_assume_aminus, 64);
+
+        println!("");
+
+        print!("Assume a+? ");
+        print_bitmask_le(aplus_is_what_to_assume, 64);
+        print!("Result:    ");
+        print_bitmask_le(result, 64);
+
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -285,4 +443,117 @@ mod tests {
         let output____ = 0b1011010101001010001000000000000000000000000000000000000000000000;
         run_test(start_____, stop______, prev_state, output____);
     }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct StgTestcase {
+        a: u64,
+        bplus: u64,
+        bminus: u64,
+    }
+
+    enum StgTestcaseShrinkerState {
+        ZeroA(usize),
+        ZeroBPlus(usize),
+        ZeroBMinus(usize),
+        RShift(usize),
+    }
+
+    impl StgTestcaseShrinkerState {
+        fn iter_all() -> Box<dyn Iterator<Item = Self>> {
+            Box::new(
+                (0..64).flat_map(
+                    |i| [Self::ZeroA(i), Self::ZeroBPlus(i), Self::ZeroBMinus(i), Self::RShift(i)])
+            )
+        }
+    }
+
+    impl quickcheck::Arbitrary for StgTestcase {
+        fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+            let mut result = Self { a: 0, bplus: 0, bminus: 0 };
+            for i in 0..64 {
+                let bit = 1u64 << i;
+                match g.choose(&[0, 1, 2, 3]).unwrap() {
+                    1 => { result.a |= bit; },
+                    2 => { result.bplus |= bit; },
+                    3 => { result.bminus |= bit; },
+                    _ => (),
+                }
+            }
+            result
+        }
+
+        fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+            let value = self.clone();
+            Box::new(
+                StgTestcaseShrinkerState::iter_all().filter_map(move |shrinker_state| {
+                    let mut candidate = value.clone();
+                    match shrinker_state {
+                        StgTestcaseShrinkerState::ZeroA(i) => { candidate.a &= !(1u64 << i); },
+                        StgTestcaseShrinkerState::ZeroBPlus(i) => { candidate.bplus &= !(1u64 << i); },
+                        StgTestcaseShrinkerState::ZeroBMinus(i) => { candidate.bminus &= !(1u64 << i); },
+                        StgTestcaseShrinkerState::RShift(i) => {
+                            let bit = 1u64 << i;
+                            if (candidate.a | candidate.bplus | candidate.bminus) & bit == 0 {
+                                let bit_below = bit - 1;
+                                let bit_above = !(bit | bit_below);
+                                let transform = |x| (x & bit_above) >> 1 | (x & bit_below);
+                                candidate.a = transform(candidate.a);
+                                candidate.bplus = transform(candidate.bplus);
+                                candidate.bminus = transform(candidate.bminus);
+                            }
+                        },
+                    }
+                    if value != candidate {
+                        Some(candidate)
+                    } else {
+                        None
+                    }
+                })
+            )
+        }
+    }
+
+    fn run_stg_test(testcase: StgTestcase) {
+        let result = unsafe {
+                stg_asdf(testcase.a, testcase.bplus, testcase.bminus, false)
+        };
+        let naive_result = naive_stg_asdf(testcase.a, testcase.bplus, testcase.bminus, false);
+        if result != naive_result {
+            println!("Test failed.");
+            println!("");
+            println!("BIT TWIDDLING");
+            println!("=============");
+            unsafe {
+                stg_asdf(testcase.a, testcase.bplus, testcase.bminus, true);
+            }
+            println!("");
+            println!("NAIVE");
+            println!("=============");
+            naive_stg_asdf(testcase.a, testcase.bplus, testcase.bminus, true);
+            panic!("stg test failed");
+        }
+    }
+
+    #[test] fn stg_test_1() { run_stg_test(StgTestcase{
+        a:      bitrev64(0b10101),
+        bplus:  bitrev64(0b01000),
+        bminus: bitrev64(0b00010) }) }
+    #[test] fn stg_test_2() { run_stg_test(StgTestcase{
+        a:      bitrev64(0b0101),
+        bplus:  bitrev64(0b1000),
+        bminus: bitrev64(0b0010) }) }
+    #[test] fn stg_test_3() { run_stg_test(StgTestcase{
+        a:      bitrev64(0b111101),
+        bplus:  bitrev64(0b000010),
+        bminus: bitrev64(0b000000) }) }
+    // #[test] fn stg_test_4() { run_stg_test(StgTestcase{
+    //     a:      bitrev64(0b111010),
+    //     bplus:  bitrev64(0b000101),
+    //     bminus: bitrev64(0b000000) }) }
+
+    // quickcheck::quickcheck! {
+    //     fn test_stg(testcase: StgTestcase) -> () {
+    //         run_stg_test(testcase)
+    //     }
+    // }
 }
