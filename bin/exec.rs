@@ -15,6 +15,5 @@ fn main() {
     let mut stdin = utils::stdin();
     let mut stdout = utils::stdout();
 
-    let mut parser = exec_parallel::make_parser(exec_worker, &mut stdout);
-    let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut stdin).unwrap();
+    let () = exec_parallel::parse(exec_worker, &mut stdin, &mut stdout);
 }

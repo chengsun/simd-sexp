@@ -348,14 +348,23 @@ impl<Stage2T: Stage2> Parse for State<Stage2T> {
     }
 }
 
-pub trait Stream<BufReadT> {
+pub trait Stream {
     type Return;
-    fn process_streaming(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::Return, Error>;
+    fn process_streaming<BufReadT: std::io::BufRead + Send>(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::Return, Error>;
 }
 
-impl<BufReadT: std::io::BufRead, Stage2T: Stage2> Stream<BufReadT> for State<Stage2T> {
+impl<Stage2T: Stage2> Stream for State<Stage2T> {
     type Return = Stage2T::Return;
-    fn process_streaming(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::Return, Error> {
+    fn process_streaming<BufReadT: std::io::BufRead + Send>(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::Return, Error> {
         self.process_streaming(segment_index, buf_reader)
     }
+}
+
+pub trait ParseStreamCps {
+    type Return;
+    fn run<ParseStreamT: Parse + Stream>(self: Self, parser: ParseStreamT) -> Self::Return;
+}
+
+fn from_writing_stage2_cps<'a, WriteT: Write, WritingStage2T: WritingStage2, Cps: ParseStreamCps>(writing_stage2: WritingStage2T, writer: &'a mut WriteT, cps: Cps) -> Cps::Return {
+    cps.run(State::from_writing_stage2(writing_stage2, writer))
 }

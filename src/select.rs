@@ -279,9 +279,9 @@ impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
     }
 }
 
-pub fn make_parser<'a, KeysT: IntoIterator<Item = &'a [u8]>, ReadT: BufRead + Send, WriteT: Write>
-    (keys: KeysT, stdout: &'a mut WriteT, output_kind: OutputKind, threads: bool)
-    -> Box<dyn parser::Stream<ReadT, Return = ()> + 'a>
+pub fn make_parser_cps<'a, KeysT: IntoIterator<Item = &'a [u8]>, WriteT: Write, Cps: parser::ParseStreamCps>
+    (keys: KeysT, stdout: &'a mut WriteT, output_kind: OutputKind, threads: bool, cps: Cps)
+    -> Cps::Return
 {
     let keys: Vec<&'a [u8]> = keys.into_iter().collect();
 
@@ -290,15 +290,15 @@ pub fn make_parser<'a, KeysT: IntoIterator<Item = &'a [u8]>, ReadT: BufRead + Se
         let chunk_size = 256 * 1024;
         return match output_kind {
             OutputKind::Values =>
-                Box::new(parser_parallel::State::from_writing_stage2(move || {
+                cps.run(parser_parallel::State::from_writing_stage2(move || {
                     Stage2::new(keys.iter().map(|x| *x), OutputValues::new())
                 }, stdout, chunk_size)),
             OutputKind::Labeled =>
-                Box::new(parser_parallel::State::from_writing_stage2(move || {
+                cps.run(parser_parallel::State::from_writing_stage2(move || {
                     Stage2::new(keys.iter().map(|x| *x), OutputLabeled::new())
                 }, stdout, chunk_size)),
             OutputKind::Csv { atoms_as_sexps } =>
-                Box::new(parser_parallel::State::from_writing_stage2(move || {
+                cps.run(parser_parallel::State::from_writing_stage2(move || {
                     Stage2::new(keys.iter().map(|x| *x), OutputCsv::new(atoms_as_sexps))
                 }, stdout, chunk_size)),
         };
@@ -306,12 +306,26 @@ pub fn make_parser<'a, KeysT: IntoIterator<Item = &'a [u8]>, ReadT: BufRead + Se
 
     match output_kind {
         OutputKind::Values =>
-            Box::new(parser::State::from_writing_stage2(Stage2::new(keys, OutputValues::new()), stdout)),
+            cps.run(parser::State::from_writing_stage2(Stage2::new(keys, OutputValues::new()), stdout)),
         OutputKind::Labeled =>
-            Box::new(parser::State::from_writing_stage2(Stage2::new(keys, OutputLabeled::new()), stdout)),
+            cps.run(parser::State::from_writing_stage2(Stage2::new(keys, OutputLabeled::new()), stdout)),
         OutputKind::Csv { atoms_as_sexps } =>
-            Box::new(parser::State::from_writing_stage2(Stage2::new(keys, OutputCsv::new(atoms_as_sexps)), stdout)),
+            cps.run(parser::State::from_writing_stage2(Stage2::new(keys, OutputCsv::new(atoms_as_sexps)), stdout)),
     }
+}
+
+struct ParseCps<'a, BufReadT: BufRead + Send>(&'a mut BufReadT);
+impl<'a, BufReadT: BufRead + Send> parser::ParseStreamCps for ParseCps<'a, BufReadT> {
+    type Return = ();
+    fn run<ParseStreamT: parser::Parse + parser::Stream>(self: Self, mut parser: ParseStreamT) -> Self::Return {
+        parser.process_streaming(parser::SegmentIndex::EntireFile, self.0).unwrap();
+    }
+}
+
+pub fn parse<'a, KeysT: IntoIterator<Item = &'a [u8]>, BufReadT: BufRead + Send, WriteT: Write>
+    (keys: KeysT, stdin: &mut BufReadT, stdout: &'a mut WriteT, output_kind: OutputKind, threads: bool)
+{
+    make_parser_cps(keys, stdout, output_kind, threads, ParseCps(stdin))
 }
 
 #[cfg(feature = "ocaml")]
@@ -394,9 +408,7 @@ mod tests {
 
     fn run_test(output_kind: OutputKind, input: &[u8], keys: &[&[u8]], expected_output: &[u8]) {
         let mut output = Vec::new();
-        let mut parser = make_parser(keys.iter().map(|x| *x), &mut output, output_kind, false);
-        let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut std::io::BufReader::new(input)).unwrap();
-        std::mem::drop(parser);
+        let () = parse(keys.iter().map(|x| *x), &mut std::io::BufReader::new(input), &mut output, output_kind, false);
 
         assert_eq!(std::str::from_utf8(&output[..]).unwrap(),
                    std::str::from_utf8(expected_output).unwrap(),

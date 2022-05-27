@@ -47,11 +47,11 @@ impl<'a> parser::Parse for ExecWorker<'a> {
     }
 }
 
-pub fn make_parser<'a, ReadT: BufRead + Send, WriteT: Write>
-    (params: ExecWorker<'a>, stdout: &'a mut WriteT)
-     -> Box<dyn parser::Stream<ReadT, Return = ()> + 'a>
+pub fn make_parser_cps<'a, ReadT: BufRead + Send, WriteT: Write, Cps: parser::ParseStreamCps>
+    (params: ExecWorker<'a>, stdout: &'a mut WriteT, cps: Cps)
+     -> Cps::Return
 {
-    Box::new(parser_parallel::State::from_worker(move || {
+    cps.run(parser_parallel::State::from_worker(move || {
         params.clone()
     }, stdout, 10 * 1024 * 1024))
 }

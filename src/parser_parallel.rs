@@ -306,15 +306,33 @@ impl<'a, WriteT: Write, WritingStage2T: parser::WritingStage2 + Send> State<Writ
     }
 }
 
-impl<BufReadT: std::io::BufRead + Send, JoinerT: Joiner> parser::Stream<BufReadT> for State<JoinerT>
+impl<JoinerT: Joiner> parser::Stream for State<JoinerT>
 where JoinerT::Worker : Send, <JoinerT::Worker as Parse>::Return : Send
 {
     type Return = JoinerT::Return;
-    fn process_streaming(&mut self, segment_index: parser::SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::Return, Error> {
+    fn process_streaming<BufReadT: std::io::BufRead + Send>(&mut self, segment_index: parser::SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::Return, Error> {
         match segment_index {
             parser::SegmentIndex::EntireFile => (),
             parser::SegmentIndex::Segment(_) => unimplemented!(),
         }
         State::process_streaming(self, buf_reader)
     }
+}
+
+impl<JoinerT: Joiner> parser::Parse for State<JoinerT>
+where JoinerT::Worker : Send, <JoinerT::Worker as Parse>::Return : Send
+{
+    type Return = JoinerT::Return;
+    fn process(&mut self, segment_index: parser::SegmentIndex, mut input: &[u8]) -> Result<Self::Return, parser::Error> {
+        match segment_index {
+            parser::SegmentIndex::EntireFile => (),
+            parser::SegmentIndex::Segment(_) => unimplemented!(),
+        }
+        self.process_streaming(&mut input)
+    }
+}
+
+pub fn from_writing_stage2_cps<'a, WriteT: Write, WritingStage2T: parser::WritingStage2 + Send, CreateF: Fn() -> WritingStage2T + 'a, Cps: parser::ParseStreamCps>
+    (create_writing_stage2: CreateF, writer: &'a mut WriteT, chunk_size: usize, cps: Cps) -> Cps::Return {
+    cps.run(State::from_writing_stage2(create_writing_stage2, writer, chunk_size))
 }
