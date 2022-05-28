@@ -13,11 +13,11 @@ notice.
 Does something similar to `sexp multi-select | sexp to-csv`.
 
 Runs at:
-*  1700GB/s on an Intel Cascade Lake Xeon server CPU (using 6 threads, specialised AVX2 code);
-*  720GB/s on an Intel Cascade Lake Xeon server CPU (using 6 threads, generic non-vectorised code);
-*  900MB/s on an Intel Kaby Lake laptop CPU (using 4 threads, specialised AVX2 code);
-*  410MB/s on an Intel Kaby Lake laptop CPU (using 4 threads, generic non-vectorised code);
-*  950MB/s on an Apple M1 Pro (using 6 threads, generic non-vectorised code).
+*  1700MiB/s on an Intel Cascade Lake Xeon server CPU (using 6 threads, specialised AVX2 code);
+*  720MiB/s on an Intel Cascade Lake Xeon server CPU (using 6 threads, generic non-vectorised code);
+*  900MiB/s on an Intel Kaby Lake laptop CPU (using 4 threads, specialised AVX2 code);
+*  410MiB/s on an Intel Kaby Lake laptop CPU (using 4 threads, generic non-vectorised code);
+*  950MiB/s on an Apple M1 Pro (using 6 threads, generic non-vectorised code).
 
 Run this as follows:
 
