@@ -73,21 +73,6 @@ mod x86 {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub use x86::*;
 
-impl StartStopTransitions for Box<dyn StartStopTransitions> {
-    fn start_stop_transitions(&self, start: u64, stop: u64, prev_state: bool) -> (u64, bool) {
-        (**self).start_stop_transitions(start, stop, prev_state)
-    }
-}
-
-pub fn runtime_detect() -> Box<dyn StartStopTransitions> {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    match Bmi2::new () {
-        None => (),
-        Some(start_stop_transitions) => { return Box::new(start_stop_transitions); }
-    }
-    Box::new(Generic::new(clmul::runtime_detect(), xor_masked_adjacent::runtime_detect()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

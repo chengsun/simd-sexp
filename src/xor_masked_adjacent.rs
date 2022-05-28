@@ -65,22 +65,6 @@ mod x86 {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub use x86::*;
 
-impl XorMaskedAdjacent for Box<dyn XorMaskedAdjacent> {
-    #[inline(always)]
-    fn xor_masked_adjacent(&self, bitstring: u64, mask: u64, lo_fill: bool) -> u64 {
-        (**self).xor_masked_adjacent(bitstring, mask, lo_fill)
-    }
-}
-
-pub fn runtime_detect() -> Box<dyn XorMaskedAdjacent> {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    match Bmi2::new () {
-        None => (),
-        Some(xor_masked_adjacent) => { return Box::new(xor_masked_adjacent); }
-    }
-    Box::new(Generic::new())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

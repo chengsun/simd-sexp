@@ -101,12 +101,6 @@ impl Classifier for GenericClassifier {
     }
 }
 
-impl Classifier for Box<dyn Classifier> {
-    fn classify(&self, in_out: &mut [u8]) {
-        (**self).classify(in_out)
-    }
-}
-
 pub trait ClassifierBuilder {
     type Classifier;
     fn build(&self, lookup_tables: &LookupTables) -> Self::Classifier;

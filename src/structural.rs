@@ -277,8 +277,6 @@ pub fn make_classifier_cps<'a, Cps: MakeClassifierCps<'a>>(cps: Cps) -> Cps::Ret
 
 #[cfg(test)]
 mod tests {
-    use rand::{prelude::Distribution, SeedableRng};
-
     use super::*;
     use crate::utils::*;
 
@@ -381,6 +379,8 @@ mod tests {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[test]
     fn test_random() {
+        use rand::{prelude::Distribution, SeedableRng};
+
         let mut rng = rand::rngs::StdRng::seed_from_u64(0);
 
         let chars = b"() \n\"\\a";

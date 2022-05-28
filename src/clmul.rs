@@ -65,21 +65,6 @@ mod x86 {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub use x86::*;
 
-impl Clmul for Box<dyn Clmul> {
-    fn clmul(&self, input: u64) -> u64 {
-        (**self).clmul(input)
-    }
-}
-
-pub fn runtime_detect() -> Box<dyn Clmul> {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    match Sse2Pclmulqdq::new () {
-        None => (),
-        Some(clmul) => { return Box::new(clmul); }
-    }
-    Box::new(Generic::new())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
