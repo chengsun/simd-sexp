@@ -128,8 +128,8 @@ unsafe impl<T: ocaml::IntoValue> ocaml::IntoValue for OCamlResult<T> {
 #[ocaml::func(rt)]
 pub fn ml_parse_sexp(input: &[u8]) -> OCamlResult<Vec<ocaml::Value>> {
 
-    let mut parser = parser::State::from_sexp_factory(OCamlSexpFactory::new(rt));
-    let result = parser.process_all(parser::SegmentIndex::EntireFile, input);
+    let mut parser = parser::parser_from_sexp_factory(OCamlSexpFactory::new(rt));
+    let result = parser.process(parser::SegmentIndex::EntireFile, input);
     OCamlResult(result.map_err(|err| err.to_string()))
 }
 
@@ -144,7 +144,7 @@ impl ocaml::Custom for rust_parser::Tape {
 #[ocaml::func]
 pub fn ml_parse_sexp_to_rust(input: &[u8]) -> OCamlResult<rust_parser::Tape> {
 
-    let mut parser = parser::State::from_visitor(rust_parser::TapeVisitor::new());
-    let result = parser.process_all(parser::SegmentIndex::EntireFile, input);
+    let mut parser = parser::parser_from_visitor(rust_parser::TapeVisitor::new());
+    let result = parser.process(parser::SegmentIndex::EntireFile, input);
     OCamlResult(result.map_err(|err| err.to_string()))
 }
