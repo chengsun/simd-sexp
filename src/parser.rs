@@ -336,18 +336,19 @@ impl<BufReadT: BufRead, ClassifierT: structural::Classifier, Stage2T: Stage2> St
     }
 }
 
-pub fn parser_new<'a, Stage2T: Stage2 + 'a>(stage2: Stage2T) -> Box<dyn Parse<Return = Stage2T::Return> + 'a> {
-    // TODO: reduce duplication here
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    {
-        match structural::Avx2::new() {
-            Some(classifier) => {
-                return Box::new(State::new(classifier, stage2));
-            },
-            None => (),
-        }
+struct MakeParserFromClassifierCps<Stage2T> {
+    stage2: Stage2T,
+}
+
+impl<'a, Stage2T: Stage2 + 'a> structural::MakeClassifierCps<'a> for MakeParserFromClassifierCps<Stage2T> {
+    type Return = Box<dyn Parse<Return = Stage2T::Return> + 'a>;
+    fn f<ClassifierT: structural::Classifier + 'a>(self: Self, classifier: ClassifierT) -> Self::Return {
+        Box::new(State::new(classifier, self.stage2))
     }
-    Box::new(State::new(structural::Generic::new(), stage2))
+}
+
+pub fn parser_new<'a, Stage2T: Stage2 + 'a>(stage2: Stage2T) -> Box<dyn Parse<Return = Stage2T::Return> + 'a> {
+    structural::make_classifier_cps(MakeParserFromClassifierCps { stage2 })
 }
 
 pub fn parser_from_visitor<'a, VisitorT: Visitor + 'a>(visitor: VisitorT) -> Box<dyn Parse<Return = VisitorT::Return> + 'a> {
@@ -368,18 +369,20 @@ pub fn parser_from_sexp_factory<'a, SexpFactoryT: SexpFactory + 'a>
     parser_from_visitor(SimpleVisitor::new(sexp_factory))
 }
 
-pub fn streaming_new<'a, Stage2T: Stage2 + 'a, BufReadT: BufRead>(stage2: Stage2T) -> Box<dyn Stream<BufReadT, Return = Stage2T::Return> + 'a> {
-    // TODO: reduce duplication here
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    {
-        match structural::Avx2::new() {
-            Some(classifier) => {
-                return Box::new(State::new(classifier, stage2));
-            },
-            None => (),
-        }
+struct MakeStreamingFromClassifierCps<Stage2T, BufReadT> {
+    stage2: Stage2T,
+    phantom: std::marker::PhantomData<*const BufReadT>,
+}
+
+impl<'a, Stage2T: Stage2 + 'a, BufReadT: BufRead> structural::MakeClassifierCps<'a> for MakeStreamingFromClassifierCps<Stage2T, BufReadT> {
+    type Return = Box<dyn Stream<BufReadT, Return = Stage2T::Return> + 'a>;
+    fn f<ClassifierT: structural::Classifier + 'a>(self: Self, classifier: ClassifierT) -> Self::Return {
+        Box::new(State::new(classifier, self.stage2))
     }
-    Box::new(State::new(structural::Generic::new(), stage2))
+}
+
+pub fn streaming_new<'a, Stage2T: Stage2 + 'a, BufReadT: BufRead>(stage2: Stage2T) -> Box<dyn Stream<BufReadT, Return = Stage2T::Return> + 'a> {
+    structural::make_classifier_cps(MakeStreamingFromClassifierCps { stage2, phantom: std::marker::PhantomData })
 }
 
 pub fn streaming_from_visitor<'a, VisitorT: Visitor + 'a, BufReadT: BufRead>(visitor: VisitorT) -> Box<dyn Stream<BufReadT, Return = VisitorT::Return> + 'a> {

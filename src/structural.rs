@@ -5,7 +5,7 @@ pub enum CallbackResult {
     Finish,
 }
 
-pub trait Classifier {
+pub trait Classifier: Clone + Send {
     const NAME: &'static str;
 
     /// Returns a bitmask for start/end of every unquoted atom; start/end of every quoted atom; parens
@@ -256,6 +256,24 @@ mod x86 {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub use x86::*;
+
+pub trait MakeClassifierCps<'a> {
+    type Return;
+    fn f<ClassifierT: Classifier + 'a>(self: Self, classifier: ClassifierT) -> Self::Return;
+}
+
+pub fn make_classifier_cps<'a, Cps: MakeClassifierCps<'a>>(cps: Cps) -> Cps::Return {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        match Avx2::new() {
+            Some(classifier) => {
+                return cps.f(classifier);
+            },
+            None => (),
+        }
+    }
+    cps.f(Generic::new())
+}
 
 #[cfg(test)]
 mod tests {

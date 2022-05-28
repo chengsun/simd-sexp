@@ -321,23 +321,25 @@ pub fn streaming_from_worker<'a, WriteT: Write, WorkerT: Parse<Return = Vec<u8>>
     streaming_new(WritingJoiner::new(Box::new(create_worker), writer), chunk_size)
 }
 
+struct MakeStreamingFromClassifierCps<'a, WriteT, F, BufReadT> {
+    create_writing_stage2: F,
+    writer: &'a mut WriteT,
+    chunk_size: usize,
+    phantom: std::marker::PhantomData<*const BufReadT>,
+}
+
+impl<'a, WriteT: Write, WritingStage2T: parser::WritingStage2 + Send + 'a, F: Fn() -> WritingStage2T + 'a, BufReadT: BufRead + Send> structural::MakeClassifierCps<'a> for MakeStreamingFromClassifierCps<'a, WriteT, F, BufReadT> {
+    type Return = Box<dyn parser::Stream<BufReadT, Return = ()> + 'a>;
+    fn f<ClassifierT: structural::Classifier + 'a>(self: Self, classifier: ClassifierT) -> Self::Return {
+        streaming_from_worker(move || {
+            parser::State::new(classifier.clone(), WritingStage2Adapter::new((self.create_writing_stage2)()))
+        }, self.writer, self.chunk_size)
+    }
+}
+
 pub fn streaming_from_writing_stage2<'a, WriteT: Write, WritingStage2T: parser::WritingStage2 + Send + 'a, F: Fn() -> WritingStage2T + 'a, BufReadT: BufRead + Send>
     (create_writing_stage2: F, writer: &'a mut WriteT, chunk_size: usize)
      -> Box<dyn parser::Stream<BufReadT, Return = ()> + 'a>
 {
-    // TODO: reduce duplication here
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    {
-        match structural::Avx2::new() {
-            Some(classifier) => {
-                return streaming_from_worker(move || {
-                    parser::State::new(classifier.clone(), WritingStage2Adapter::new(create_writing_stage2()))
-                }, writer, chunk_size);
-            },
-            None => (),
-        }
-    }
-    streaming_from_worker(move || {
-        parser::State::new(structural::Generic::new(), WritingStage2Adapter::new(create_writing_stage2()))
-    }, writer, chunk_size)
+    structural::make_classifier_cps(MakeStreamingFromClassifierCps { create_writing_stage2, writer, chunk_size, phantom: std::marker::PhantomData })
 }
