@@ -1,15 +1,48 @@
 # simd-sexp
 
-Some experiments with faster sexp parsing using SIMD.
+Some experiments with faster sexp parsing using SIMD and parallelisation.
 
 This project is currently in a prototype stage. Don't use this for anything in
 production. Expect things in this repo to change/break/disappear without
 notice.
 
-Things that currently exist and are maybe interesting/useful:
+## What's in the box?
+
+### A fast "select" CLI tool
+
+Does something similar to `sexp multi-select | sexp to-csv`.
+
+Runs at:
+*  1700GB/s on an Intel Cascade Lake Xeon server CPU (using 6 threads, specialised AVX2 code);
+*  720GB/s on an Intel Cascade Lake Xeon server CPU (using 6 threads, generic non-vectorised code);
+*  900MB/s on an Intel Kaby Lake laptop CPU (using 4 threads, specialised AVX2 code);
+*  410MB/s on an Intel Kaby Lake laptop CPU (using 4 threads, generic non-vectorised code);
+*  950MB/s on an Apple M1 Pro (using 6 threads, generic non-vectorised code).
+
+Run this as follows:
 
 ```
 $ < test.sexp cargo run --release --bin select -- foo bar
+```
+
+### A tool for parallelising other sexp filters
+
+This tool parallelises any filter-like sexp CLI, like `sexp query`.
+
+Run this as follows:
+
+```
+$ < test.sexp cargo run --release --bin exec -- sexp query 'smash (field foo)'
+```
+
+This is equivalent to running `< test.sexp sexp query 'smash (field foo)'`,
+however `exec` will invoke multiple copies of the sexp command in parallel, feed
+each chunks of the input (split at appropriate points), and reassemble the
+output in the right order.
+
+### Other stuff
+
+```
 $ dune exec benches/benches.exe
 $ cargo bench parser
 $ cargo test
@@ -19,6 +52,8 @@ $ dune test
 (NB: the benches might fail because they reference some test data files, which
 I haven't committed to this repo. They're quite big, so I don't want to check
 them in. I haven't figured out where to put them yet.)
+
+## Details
 
 Lots of inspiration drawn from the excellent work done by the people behind
 [simdjson](https://simdjson.org/). In simd-sexp there is a notion of "stage-1"
