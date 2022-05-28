@@ -290,27 +290,27 @@ pub fn make_parser<'a, KeysT: IntoIterator<Item = &'a [u8]>, ReadT: BufRead + Se
         let chunk_size = 256 * 1024;
         return match output_kind {
             OutputKind::Values =>
-                Box::new(parser_parallel::State::from_writing_stage2(move || {
+                parser_parallel::streaming_from_writing_stage2(move || {
                     Stage2::new(keys.iter().map(|x| *x), OutputValues::new())
-                }, stdout, chunk_size)),
+                }, stdout, chunk_size),
             OutputKind::Labeled =>
-                Box::new(parser_parallel::State::from_writing_stage2(move || {
+                parser_parallel::streaming_from_writing_stage2(move || {
                     Stage2::new(keys.iter().map(|x| *x), OutputLabeled::new())
-                }, stdout, chunk_size)),
+                }, stdout, chunk_size),
             OutputKind::Csv { atoms_as_sexps } =>
-                Box::new(parser_parallel::State::from_writing_stage2(move || {
+                parser_parallel::streaming_from_writing_stage2(move || {
                     Stage2::new(keys.iter().map(|x| *x), OutputCsv::new(atoms_as_sexps))
-                }, stdout, chunk_size)),
+                }, stdout, chunk_size),
         };
     }
 
     match output_kind {
         OutputKind::Values =>
-            Box::new(parser::State::from_writing_stage2(Stage2::new(keys, OutputValues::new()), stdout)),
+            parser::streaming_from_writing_stage2(Stage2::new(keys, OutputValues::new()), stdout),
         OutputKind::Labeled =>
-            Box::new(parser::State::from_writing_stage2(Stage2::new(keys, OutputLabeled::new()), stdout)),
+            parser::streaming_from_writing_stage2(Stage2::new(keys, OutputLabeled::new()), stdout),
         OutputKind::Csv { atoms_as_sexps } =>
-            Box::new(parser::State::from_writing_stage2(Stage2::new(keys, OutputCsv::new(atoms_as_sexps)), stdout)),
+            parser::streaming_from_writing_stage2(Stage2::new(keys, OutputCsv::new(atoms_as_sexps)), stdout),
     }
 }
 

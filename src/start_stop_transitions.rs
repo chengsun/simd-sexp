@@ -32,38 +32,44 @@ impl<ClmulT: clmul::Clmul, XorMaskedAdjacentT: xor_masked_adjacent::XorMaskedAdj
     }
 }
 
-pub struct Bmi2 { _feature_detected_witness: () }
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+mod x86 {
+    pub struct Bmi2 { _feature_detected_witness: () }
 
-impl Bmi2 {
-    pub fn new() -> Option<Self> {
-        if is_x86_feature_detected!("bmi2") {
-            return Some(Bmi2{ _feature_detected_witness: () });
+    impl Bmi2 {
+        pub fn new() -> Option<Self> {
+            if is_x86_feature_detected!("bmi2") {
+                return Some(Bmi2{ _feature_detected_witness: () });
+            }
+            None
         }
-        None
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[target_feature(enable = "bmi2")]
+        #[inline]
+        unsafe fn _start_stop_transitions(&self, start: u64, stop: u64, prev_state: bool) -> (u64, bool) {
+            debug_assert!(start & stop == 0);
+
+            let mask = start | stop;
+            let compressed_start = _pext_u64(start, mask);
+            let compressed_transitions = compressed_start ^ (compressed_start << 1 | prev_state as u64);
+            let next_transitions = _pdep_u64(compressed_transitions, mask);
+            let next_state = prev_state ^ ((next_transitions.count_ones() & 1) != 0);
+            return (next_transitions, next_state);
+        }
     }
 
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    #[target_feature(enable = "bmi2")]
-    #[inline]
-    unsafe fn _start_stop_transitions(&self, start: u64, stop: u64, prev_state: bool) -> (u64, bool) {
-        debug_assert!(start & stop == 0);
-
-        let mask = start | stop;
-        let compressed_start = _pext_u64(start, mask);
-        let compressed_transitions = compressed_start ^ (compressed_start << 1 | prev_state as u64);
-        let next_transitions = _pdep_u64(compressed_transitions, mask);
-        let next_state = prev_state ^ ((next_transitions.count_ones() & 1) != 0);
-        return (next_transitions, next_state);
+    impl StartStopTransitions for Bmi2 {
+        #[inline(always)]
+        fn start_stop_transitions(&self, start: u64, stop: u64, prev_state: bool) -> (u64, bool) {
+            let () = self._feature_detected_witness;
+            unsafe { self._start_stop_transitions(start, stop, prev_state) }
+        }
     }
 }
 
-impl StartStopTransitions for Bmi2 {
-    #[inline(always)]
-    fn start_stop_transitions(&self, start: u64, stop: u64, prev_state: bool) -> (u64, bool) {
-        let () = self._feature_detected_witness;
-        unsafe { self._start_stop_transitions(start, stop, prev_state) }
-    }
-}
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub use x86;
 
 impl StartStopTransitions for Box<dyn StartStopTransitions> {
     fn start_stop_transitions(&self, start: u64, stop: u64, prev_state: bool) -> (u64, bool) {
@@ -72,6 +78,7 @@ impl StartStopTransitions for Box<dyn StartStopTransitions> {
 }
 
 pub fn runtime_detect() -> Box<dyn StartStopTransitions> {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     match Bmi2::new () {
         None => (),
         Some(start_stop_transitions) => { return Box::new(start_stop_transitions); }
@@ -116,6 +123,7 @@ mod tests {
         let generic = Generic::new(clmul::Generic::new(), xor_masked_adjacent::Generic::new());
         generic.run_test(start, stop, prev_state, output);
 
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         match Bmi2::new() {
             Some(bmi2) => bmi2.run_test(start, stop, prev_state, output),
             None => (),

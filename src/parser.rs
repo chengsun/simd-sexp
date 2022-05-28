@@ -1,7 +1,7 @@
 use crate::{escape, extract, structural};
 use crate::utils::*;
 use crate::visitor::*;
-use std::io::Write;
+use std::io::{BufRead, Write};
 
 #[derive(Copy, Clone)]
 pub struct Input<'a> {
@@ -149,9 +149,9 @@ impl<VisitorT: Visitor> Stage2 for VisitorState<VisitorT> {
 /// Must be >= 64. Doesn't affect correctness or impose limitations on sexp being parsed.
 const INDICES_BUFFER_MAX_LEN: usize = 512;
 
-pub struct State<Stage2T> {
+pub struct State<ClassifierT, Stage2T> {
     stage2: Stage2T,
-    structural_classifier: structural::Avx2,
+    structural_classifier: ClassifierT,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -175,35 +175,15 @@ impl std::fmt::Display for Error {
     }
 }
 
-impl<SexpFactoryT: SexpFactory> State<VisitorState<SimpleVisitor<SexpFactoryT>>> {
-    pub fn from_sexp_factory(sexp_factory: SexpFactoryT) -> Self {
-        Self::from_visitor(SimpleVisitor::new(sexp_factory))
-    }
-}
-
-impl<VisitorT: Visitor> State<VisitorState<VisitorT>> {
-    pub fn from_visitor(visitor: VisitorT) -> Self {
-        Self::new(VisitorState::new(visitor))
-    }
-}
-
-impl<'a, WriteT: Write, WritingStage2T: WritingStage2> State<WritingStage2Adapter<'a, WritingStage2T, WriteT>> {
-    pub fn from_writing_stage2(writing_stage2: WritingStage2T, writer: &'a mut WriteT) -> Self {
-        Self::new(WritingStage2Adapter::new(writing_stage2, writer))
-    }
-}
-
-impl<Stage2T: Stage2> State<Stage2T> {
-    pub fn new(stage2: Stage2T) -> Self {
-        let structural_classifier = structural::Avx2::new().unwrap();
-
+impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, Stage2T> {
+    pub fn new(structural_classifier: ClassifierT, stage2: Stage2T) -> Self {
         State {
             stage2,
             structural_classifier,
         }
     }
 
-    pub fn process_streaming<BufReadT : std::io::BufRead>(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Stage2T::Return, Error> {
+    pub fn process_streaming<BufReadT: BufRead>(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Stage2T::Return, Error> {
         use structural::Classifier;
 
         let mut input_index = 0;
@@ -341,7 +321,7 @@ pub trait Parse {
     fn process(&mut self, segment_index: SegmentIndex, input: &[u8]) -> Result<Self::Return, Error>;
 }
 
-impl<Stage2T: Stage2> Parse for State<Stage2T> {
+impl<ClassifierT: structural::Classifier, Stage2T: Stage2> Parse for State<ClassifierT, Stage2T> {
     type Return = Stage2T::Return;
     fn process(&mut self, segment_index: SegmentIndex, input: &[u8]) -> Result<Self::Return, Error> {
         self.process_all(segment_index, input)
@@ -353,9 +333,73 @@ pub trait Stream<BufReadT> {
     fn process_streaming(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::Return, Error>;
 }
 
-impl<BufReadT: std::io::BufRead, Stage2T: Stage2> Stream<BufReadT> for State<Stage2T> {
+impl<BufReadT: BufRead, ClassifierT: structural::Classifier, Stage2T: Stage2> Stream<BufReadT> for State<ClassifierT, Stage2T> {
     type Return = Stage2T::Return;
     fn process_streaming(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::Return, Error> {
         self.process_streaming(segment_index, buf_reader)
     }
+}
+
+pub fn parser_new<'a, Stage2T: Stage2 + 'a>(stage2: Stage2T) -> Box<dyn Parse<Return = Stage2T::Return> + 'a> {
+    // TODO: reduce duplication here
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        match structural::Avx2::new() {
+            Some(classifier) => {
+                return Box::new(State::new(classifier, stage2));
+            },
+            None => (),
+        }
+    }
+    Box::new(State::new(structural::Generic::new(), stage2))
+}
+
+pub fn parser_from_visitor<'a, VisitorT: Visitor + 'a>(visitor: VisitorT) -> Box<dyn Parse<Return = VisitorT::Return> + 'a> {
+    parser_new(VisitorState::new(visitor))
+}
+
+pub fn parser_from_writing_stage2<'a, WriteT: Write, WritingStage2T: WritingStage2 + 'a>
+    (writing_stage2: WritingStage2T, writer: &'a mut WriteT)
+     -> Box<dyn Parse<Return = ()> + 'a>
+{
+    parser_new(WritingStage2Adapter::new(writing_stage2, writer))
+}
+
+pub fn parser_from_sexp_factory<'a, SexpFactoryT: SexpFactory + 'a>
+    (sexp_factory: SexpFactoryT)
+     -> Box<dyn Parse<Return = Vec<SexpFactoryT::Sexp>> + 'a>
+{
+    parser_from_visitor(SimpleVisitor::new(sexp_factory))
+}
+
+pub fn streaming_new<'a, Stage2T: Stage2 + 'a, BufReadT: BufRead>(stage2: Stage2T) -> Box<dyn Stream<BufReadT, Return = Stage2T::Return> + 'a> {
+    // TODO: reduce duplication here
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        match structural::Avx2::new() {
+            Some(classifier) => {
+                return Box::new(State::new(classifier, stage2));
+            },
+            None => (),
+        }
+    }
+    Box::new(State::new(structural::Generic::new(), stage2))
+}
+
+pub fn streaming_from_visitor<'a, VisitorT: Visitor + 'a, BufReadT: BufRead>(visitor: VisitorT) -> Box<dyn Stream<BufReadT, Return = VisitorT::Return> + 'a> {
+    streaming_new(VisitorState::new(visitor))
+}
+
+pub fn streaming_from_writing_stage2<'a, WriteT: Write, WritingStage2T: WritingStage2 + 'a, BufReadT: BufRead>
+    (writing_stage2: WritingStage2T, writer: &'a mut WriteT)
+     -> Box<dyn Stream<BufReadT, Return = ()> + 'a>
+{
+    streaming_new(WritingStage2Adapter::new(writing_stage2, writer))
+}
+
+pub fn streaming_from_sexp_factory<'a, SexpFactoryT: SexpFactory + 'a, BufReadT: BufRead>
+    (sexp_factory: SexpFactoryT)
+     -> Box<dyn Stream<BufReadT, Return = Vec<SexpFactoryT::Sexp>> + 'a>
+{
+    streaming_from_visitor(SimpleVisitor::new(sexp_factory))
 }

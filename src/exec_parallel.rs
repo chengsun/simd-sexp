@@ -51,9 +51,9 @@ pub fn make_parser<'a, ReadT: BufRead + Send, WriteT: Write>
     (params: ExecWorker<'a>, stdout: &'a mut WriteT)
      -> Box<dyn parser::Stream<ReadT, Return = ()> + 'a>
 {
-    Box::new(parser_parallel::State::from_worker(move || {
+    parser_parallel::streaming_from_worker(move || {
         params.clone()
-    }, stdout, 10 * 1024 * 1024))
+    }, stdout, 10 * 1024 * 1024)
 }
 
 #[cfg(feature = "ocaml")]

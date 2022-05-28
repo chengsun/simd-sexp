@@ -30,33 +30,39 @@ impl Clmul for Generic {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct Sse2Pclmulqdq { _feature_detected_witness: () }
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+mod x86 {
+    #[derive(Copy, Clone, Debug)]
+    pub struct Sse2Pclmulqdq { _feature_detected_witness: () }
 
-impl Sse2Pclmulqdq {
-    pub fn new() -> Option<Self> {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if is_x86_feature_detected!("sse2") && is_x86_feature_detected!("pclmulqdq") {
-            return Some(Self { _feature_detected_witness: () });
+    impl Sse2Pclmulqdq {
+        pub fn new() -> Option<Self> {
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+            if is_x86_feature_detected!("sse2") && is_x86_feature_detected!("pclmulqdq") {
+                return Some(Self { _feature_detected_witness: () });
+            }
+            None
         }
-        None
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[target_feature(enable = "sse2,pclmulqdq")]
+        #[inline]
+        unsafe fn _clmul(&self, input: u64) -> u64 {
+            _mm_cvtsi128_si64(_mm_clmulepi64_si128(_mm_set_epi64x(0i64, input as i64), _mm_set1_epi8(0xFFu8 as i8), 0x00)) as u64
+        }
     }
 
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    #[target_feature(enable = "sse2,pclmulqdq")]
-    #[inline]
-    unsafe fn _clmul(&self, input: u64) -> u64 {
-        _mm_cvtsi128_si64(_mm_clmulepi64_si128(_mm_set_epi64x(0i64, input as i64), _mm_set1_epi8(0xFFu8 as i8), 0x00)) as u64
+    impl Clmul for Sse2Pclmulqdq {
+        #[inline(always)]
+        fn clmul(&self, input: u64) -> u64 {
+            let () = self._feature_detected_witness;
+            return unsafe { self._clmul(input) };
+        }
     }
 }
 
-impl Clmul for Sse2Pclmulqdq {
-    #[inline(always)]
-    fn clmul(&self, input: u64) -> u64 {
-        let () = self._feature_detected_witness;
-        return unsafe { self._clmul(input) };
-    }
-}
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub use x86;
 
 impl Clmul for Box<dyn Clmul> {
     fn clmul(&self, input: u64) -> u64 {
@@ -65,6 +71,7 @@ impl Clmul for Box<dyn Clmul> {
 }
 
 pub fn runtime_detect() -> Box<dyn Clmul> {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     match Sse2Pclmulqdq::new () {
         None => (),
         Some(clmul) => { return Box::new(clmul); }
@@ -102,6 +109,7 @@ mod tests {
         let generic = Generic::new();
         generic.run_test(input, output);
 
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         match Sse2Pclmulqdq::new() {
             Some(sse2_pclmulqdq) => sse2_pclmulqdq.run_test(input, output),
             None => (),

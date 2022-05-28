@@ -1,5 +1,6 @@
 use crate::parser::{self, Parse};
-use std::io::Write;
+use crate::structural;
+use std::io::{BufRead, Write};
 use std::collections::VecDeque;
 
 pub type Error = parser::Error;
@@ -15,7 +16,7 @@ pub struct WorkUnit {
 /// which are called sequentially on the results of the workers (in the correct
 /// order).
 pub trait Joiner {
-    type Worker : Parse;
+    type Worker: Parse;
     type Return;
 
     fn process_bof(&mut self, input_size_hint: Option<usize>);
@@ -292,20 +293,6 @@ where
     }
 }
 
-impl<'a, WriteT: Write, WorkerT: Parse<Return = Vec<u8>> + Send> State<WritingJoiner<'a, WriteT, WorkerT>> {
-    pub fn from_worker<F: Fn() -> WorkerT + 'a>(create_worker: F, writer: &'a mut WriteT, chunk_size: usize) -> Self {
-        Self::new(WritingJoiner::new(Box::new(create_worker), writer), chunk_size)
-    }
-}
-
-impl<'a, WriteT: Write, WritingStage2T: parser::WritingStage2 + Send> State<WritingJoiner<'a, WriteT, parser::State<WritingStage2Adapter<WritingStage2T>>>> {
-    pub fn from_writing_stage2<F: Fn() -> WritingStage2T + 'a>(create_writing_stage2: F, writer: &'a mut WriteT, chunk_size: usize) -> Self {
-        Self::from_worker(move || {
-            parser::State::new(WritingStage2Adapter::new(create_writing_stage2()))
-        }, writer, chunk_size)
-    }
-}
-
 impl<BufReadT: std::io::BufRead + Send, JoinerT: Joiner> parser::Stream<BufReadT> for State<JoinerT>
 where JoinerT::Worker : Send, <JoinerT::Worker as Parse>::Return : Send
 {
@@ -317,4 +304,40 @@ where JoinerT::Worker : Send, <JoinerT::Worker as Parse>::Return : Send
         }
         State::process_streaming(self, buf_reader)
     }
+}
+
+pub fn streaming_new<'a, JoinerT: Joiner + 'a, BufReadT: BufRead + Send>(joiner: JoinerT, chunk_size: usize) -> Box<dyn parser::Stream<BufReadT, Return = JoinerT::Return> + 'a>
+where
+    JoinerT::Worker : Send,
+    <JoinerT::Worker as Parse>::Return : Send
+{
+    Box::new(State::new(joiner, chunk_size))
+}
+
+pub fn streaming_from_worker<'a, WriteT: Write, WorkerT: Parse<Return = Vec<u8>> + Send + 'a, F: Fn() -> WorkerT + 'a, BufReadT: BufRead + Send>
+    (create_worker: F, writer: &'a mut WriteT, chunk_size: usize)
+     -> Box<dyn parser::Stream<BufReadT, Return = ()> + 'a>
+{
+    streaming_new(WritingJoiner::new(Box::new(create_worker), writer), chunk_size)
+}
+
+pub fn streaming_from_writing_stage2<'a, WriteT: Write, WritingStage2T: parser::WritingStage2 + Send + 'a, F: Fn() -> WritingStage2T + 'a, BufReadT: BufRead + Send>
+    (create_writing_stage2: F, writer: &'a mut WriteT, chunk_size: usize)
+     -> Box<dyn parser::Stream<BufReadT, Return = ()> + 'a>
+{
+    // TODO: reduce duplication here
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        match structural::Avx2::new() {
+            Some(classifier) => {
+                return streaming_from_worker(move || {
+                    parser::State::new(classifier.clone(), WritingStage2Adapter::new(create_writing_stage2()))
+                }, writer, chunk_size);
+            },
+            None => (),
+        }
+    }
+    streaming_from_worker(move || {
+        parser::State::new(structural::Generic::new(), WritingStage2Adapter::new(create_writing_stage2()))
+    }, writer, chunk_size)
 }

@@ -25,39 +25,43 @@ impl XorMaskedAdjacent for Generic {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct Bmi2 {
-    _feature_detected_witness: ()
-}
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+mod x86 {
+    #[derive(Copy, Clone, Debug)]
+    pub struct Bmi2 {
+        _feature_detected_witness: ()
+    }
 
-impl Bmi2 {
-    pub fn new() -> Option<Self> {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if is_x86_feature_detected!("bmi2") {
-            return Some(Self { _feature_detected_witness: () });
+    impl Bmi2 {
+        pub fn new() -> Option<Self> {
+            if is_x86_feature_detected!("bmi2") {
+                return Some(Self { _feature_detected_witness: () });
+            }
+            None
         }
-        None
-    }
 
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    #[target_feature(enable = "bmi2")]
-    #[inline]
-    unsafe fn _xor_masked_adjacent(&self, bitstring: u64, mask: u64, lo_fill: bool) -> u64 {
-        let d1 = _pext_u64(bitstring, mask);
-        let d2 = d1 ^ ((d1 << 1) | (lo_fill as u64));
-        _pdep_u64(d2, mask)
-    }
-}
-
-impl XorMaskedAdjacent for Bmi2 {
-    #[inline(always)]
-    fn xor_masked_adjacent(&self, bitstring: u64, mask: u64, lo_fill: bool) -> u64 {
-        let () = self._feature_detected_witness;
-        unsafe {
-            self._xor_masked_adjacent(bitstring, mask, lo_fill)
+        #[target_feature(enable = "bmi2")]
+        #[inline]
+        unsafe fn _xor_masked_adjacent(&self, bitstring: u64, mask: u64, lo_fill: bool) -> u64 {
+            let d1 = _pext_u64(bitstring, mask);
+            let d2 = d1 ^ ((d1 << 1) | (lo_fill as u64));
+            _pdep_u64(d2, mask)
         }
     }
+
+    impl XorMaskedAdjacent for Bmi2 {
+        #[inline(always)]
+        fn xor_masked_adjacent(&self, bitstring: u64, mask: u64, lo_fill: bool) -> u64 {
+            let () = self._feature_detected_witness;
+            unsafe {
+                self._xor_masked_adjacent(bitstring, mask, lo_fill)
+            }
+        }
+    }
 }
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub use x86;
 
 impl XorMaskedAdjacent for Box<dyn XorMaskedAdjacent> {
     #[inline(always)]
@@ -67,6 +71,7 @@ impl XorMaskedAdjacent for Box<dyn XorMaskedAdjacent> {
 }
 
 pub fn runtime_detect() -> Box<dyn XorMaskedAdjacent> {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     match Bmi2::new () {
         None => (),
         Some(xor_masked_adjacent) => { return Box::new(xor_masked_adjacent); }
@@ -107,6 +112,7 @@ mod tests {
     fn run_test(bitstring: u64, mask: u64, lo_fill: bool, output: u64) {
         let generic = Generic {};
         generic.run_test(bitstring, mask, lo_fill, output);
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         match Bmi2::new() {
             None => (),
             Some(bmi2) => bmi2.run_test(bitstring, mask, lo_fill, output)
