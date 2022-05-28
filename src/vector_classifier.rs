@@ -1,8 +1,4 @@
 use std::collections::HashMap;
-#[cfg(target_arch = "x86")]
-use core::arch::x86::*;
-#[cfg(target_arch = "x86_64")]
-use core::arch::x86_64::*;
 
 #[derive(Clone, Debug)]
 pub struct LookupTables {
@@ -133,6 +129,13 @@ impl ClassifierBuilder for GenericBuilder {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod x86 {
+    #[cfg(target_arch = "x86")]
+    use core::arch::x86::*;
+    #[cfg(target_arch = "x86_64")]
+    use core::arch::x86_64::*;
+
+    use super::{Classifier, ClassifierBuilder, GenericClassifier, LookupTables};
+
     #[derive(Clone, Debug)]
     pub struct Ssse3Classifier {
         generic: GenericClassifier,
@@ -258,7 +261,7 @@ mod x86 {
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub use x86;
+pub use x86::*;
 
 pub struct RuntimeDetectBuilder {}
 

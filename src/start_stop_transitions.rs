@@ -1,8 +1,3 @@
-#[cfg(target_arch = "x86")]
-use core::arch::x86::*;
-#[cfg(target_arch = "x86_64")]
-use core::arch::x86_64::*;
-
 use crate::clmul;
 use crate::xor_masked_adjacent;
 
@@ -34,6 +29,13 @@ impl<ClmulT: clmul::Clmul, XorMaskedAdjacentT: xor_masked_adjacent::XorMaskedAdj
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod x86 {
+    #[cfg(target_arch = "x86")]
+    use core::arch::x86::*;
+    #[cfg(target_arch = "x86_64")]
+    use core::arch::x86_64::*;
+
+    use super::StartStopTransitions;
+
     pub struct Bmi2 { _feature_detected_witness: () }
 
     impl Bmi2 {
@@ -69,7 +71,7 @@ mod x86 {
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub use x86;
+pub use x86::*;
 
 impl StartStopTransitions for Box<dyn StartStopTransitions> {
     fn start_stop_transitions(&self, start: u64, stop: u64, prev_state: bool) -> (u64, bool) {

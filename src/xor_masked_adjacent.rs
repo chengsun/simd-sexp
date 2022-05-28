@@ -1,8 +1,3 @@
-#[cfg(target_arch = "x86")]
-use core::arch::x86::*;
-#[cfg(target_arch = "x86_64")]
-use core::arch::x86_64::*;
-
 pub trait XorMaskedAdjacent {
     fn xor_masked_adjacent(&self, bitstring: u64, mask: u64, lo_fill: bool) -> u64;
 }
@@ -27,6 +22,13 @@ impl XorMaskedAdjacent for Generic {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod x86 {
+    #[cfg(target_arch = "x86")]
+    use core::arch::x86::*;
+    #[cfg(target_arch = "x86_64")]
+    use core::arch::x86_64::*;
+
+    use super::XorMaskedAdjacent;
+
     #[derive(Copy, Clone, Debug)]
     pub struct Bmi2 {
         _feature_detected_witness: ()
@@ -61,7 +63,7 @@ mod x86 {
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub use x86;
+pub use x86::*;
 
 impl XorMaskedAdjacent for Box<dyn XorMaskedAdjacent> {
     #[inline(always)]

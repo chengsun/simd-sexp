@@ -1,8 +1,3 @@
-#[cfg(target_arch = "x86")]
-use core::arch::x86::*;
-#[cfg(target_arch = "x86_64")]
-use core::arch::x86_64::*;
-
 pub trait Clmul {
     fn clmul(&self, input: u64) -> u64;
 }
@@ -32,6 +27,12 @@ impl Clmul for Generic {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod x86 {
+    use super::Clmul;
+    #[cfg(target_arch = "x86")]
+    use core::arch::x86::*;
+    #[cfg(target_arch = "x86_64")]
+    use core::arch::x86_64::*;
+
     #[derive(Copy, Clone, Debug)]
     pub struct Sse2Pclmulqdq { _feature_detected_witness: () }
 
@@ -62,7 +63,7 @@ mod x86 {
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub use x86;
+pub use x86::*;
 
 impl Clmul for Box<dyn Clmul> {
     fn clmul(&self, input: u64) -> u64 {

@@ -1,11 +1,4 @@
-#[cfg(target_arch = "x86")]
-use core::arch::x86::*;
-#[cfg(target_arch = "x86_64")]
-use core::arch::x86_64::*;
-
-use crate::{clmul, xor_masked_adjacent, vector_classifier, utils, find_quote_transitions, ranges};
-use vector_classifier::ClassifierBuilder;
-use clmul::Clmul;
+use crate::vector_classifier;
 
 pub enum CallbackResult {
     Continue,
@@ -22,7 +15,7 @@ pub trait Classifier {
         (&mut self, input_buf: &[u8], f: F);
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Generic {
     escape: bool,
     quote_state: bool,
@@ -87,7 +80,18 @@ pub fn not_atom_like_lookup_tables() -> vector_classifier::LookupTables {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod x86 {
-    #[derive(Debug)]
+    #[cfg(target_arch = "x86")]
+    use core::arch::x86::*;
+    #[cfg(target_arch = "x86_64")]
+    use core::arch::x86_64::*;
+
+    use crate::{clmul, vector_classifier, xor_masked_adjacent, utils, find_quote_transitions, ranges};
+    use vector_classifier::ClassifierBuilder;
+    use clmul::Clmul;
+
+    use super::{Classifier, CallbackResult, Generic, not_atom_like_lookup_tables};
+
+    #[derive(Clone, Debug)]
     pub struct Avx2 {
         /* constants */
         clmul: clmul::Sse2Pclmulqdq,
@@ -142,6 +146,11 @@ mod x86 {
             self.generic.escape = self.escape;
             self.generic.quote_state = self.quote_state;
             self.generic.atom_like = self.atom_like;
+        }
+
+        pub fn get_generic_state(&mut self) -> Generic {
+            self.copy_state_to_generic();
+            self.generic
         }
 
         #[target_feature(enable = "avx2,bmi2,sse2,ssse3,pclmulqdq")]
@@ -246,7 +255,7 @@ mod x86 {
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub use x86;
+pub use x86::*;
 
 #[cfg(test)]
 mod tests {
@@ -296,8 +305,7 @@ mod tests {
         match Avx2::new() {
             Some(mut avx2) => {
                 avx2.run_test(input, output);
-                avx2.copy_state_to_generic();
-                assert_eq!(generic, avx2.generic);
+                assert_eq!(generic, avx2.get_generic_state());
             },
             None => (),
         }

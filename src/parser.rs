@@ -184,8 +184,6 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
     }
 
     pub fn process_streaming<BufReadT: BufRead>(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Stage2T::Return, Error> {
-        use structural::Classifier;
-
         let mut input_index = 0;
         let mut indices_len = 0;
         let mut indices_buffer = [0; INDICES_BUFFER_MAX_LEN];
@@ -274,8 +272,6 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
     }
 
     pub fn process_all(&mut self, segment_index: SegmentIndex, input: &[u8]) -> Result<Stage2T::Return, Error> {
-        use structural::Classifier;
-
         let mut input_index = 0;
         let mut indices_len = 0;
         let mut indices_buffer = [0; INDICES_BUFFER_MAX_LEN];
