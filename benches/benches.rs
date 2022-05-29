@@ -66,7 +66,7 @@ fn bench_structural(c: &mut Criterion) {
                                     }));
         }
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[cfg(target_arch = "x86_64")]
         match structural::Avx2::new() {
             None => (),
             Some(mut classifier) => {
@@ -190,7 +190,7 @@ fn bench_find_quote_transitions(c: &mut Criterion) {
                              &generic_clmul, &generic_xor_masked_adjacent,
                              unescaped, escaped, prev_state))));
 
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(target_arch = "x86_64")]
     match (clmul::Sse2Pclmulqdq::new(), xor_masked_adjacent::Bmi2::new()) {
         (Some(clmul), Some(xor_masked_adjacent)) => {
             group.bench_function("haswell",
@@ -232,7 +232,7 @@ fn bench_start_stop_transitions(c: &mut Criterion) {
                          |b| b.iter(|| black_box(generic_start_stop_transitions.start_stop_transitions(start, stop, prev_state))));
 
 
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(target_arch = "x86_64")]
     match start_stop_transitions::Bmi2::new() {
         None => (),
         Some(bmi2_start_stop_transitions) => {
@@ -276,7 +276,7 @@ fn bench_vector_classifier(c: &mut Criterion) {
                              black_box(generic_classifier.classify(&mut bytes));
                          }, BatchSize::SmallInput));
 
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(target_arch = "x86_64")]
     match vector_classifier::Ssse3Builder::new() {
         None => (),
         Some(ssse3_builder) => {
@@ -289,7 +289,7 @@ fn bench_vector_classifier(c: &mut Criterion) {
         }
     }
 
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(target_arch = "x86_64")]
     match vector_classifier::Avx2Builder::new() {
         None => (),
         Some(avx2_builder) => {
@@ -336,7 +336,7 @@ fn bench_xor_masked_adjacent(c: &mut Criterion) {
     group.bench_function("generic",
                          |b| b.iter(|| black_box(generic.xor_masked_adjacent(bitstring, mask, lo_fill))));
 
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(target_arch = "x86_64")]
     match xor_masked_adjacent::Bmi2::new() {
         None => (),
         Some(bmi2) => {

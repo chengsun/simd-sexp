@@ -27,11 +27,8 @@ impl<ClmulT: clmul::Clmul, XorMaskedAdjacentT: xor_masked_adjacent::XorMaskedAdj
     }
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 mod x86 {
-    #[cfg(target_arch = "x86")]
-    use core::arch::x86::*;
-    #[cfg(target_arch = "x86_64")]
     use core::arch::x86_64::*;
 
     use super::StartStopTransitions;
@@ -46,7 +43,6 @@ mod x86 {
             None
         }
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         #[target_feature(enable = "bmi2")]
         #[inline]
         unsafe fn _start_stop_transitions(&self, start: u64, stop: u64, prev_state: bool) -> (u64, bool) {
@@ -70,7 +66,7 @@ mod x86 {
     }
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 pub use x86::*;
 
 #[cfg(test)]
@@ -110,7 +106,7 @@ mod tests {
         let generic = Generic::new(clmul::Generic::new(), xor_masked_adjacent::Generic::new());
         generic.run_test(start, stop, prev_state, output);
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[cfg(target_arch = "x86_64")]
         match Bmi2::new() {
             Some(bmi2) => bmi2.run_test(start, stop, prev_state, output),
             None => (),

@@ -1,5 +1,3 @@
-#[cfg(target_arch = "x86")]
-use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 #[cfg(target_arch = "aarch64")]
@@ -17,7 +15,7 @@ pub fn make_bitmask_generic(input: &[u8]) -> u64 {
     result
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[inline]
 pub unsafe fn make_bitmask(lo: __m256i, hi: __m256i) -> u64 {
@@ -67,7 +65,7 @@ pub fn print64(i: u64) {
   println!("{:016x}", i);
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse2")]
 pub unsafe fn print128(i: __m128i) {
     let mut buf = [0u64; 2];
@@ -75,7 +73,7 @@ pub unsafe fn print128(i: __m128i) {
     println!("{:016x}{:016x}\n", buf[1], buf[0]);
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx")]
 pub unsafe fn print256(i: __m256i) {
     let mut buf = [0u64; 4];
@@ -83,7 +81,7 @@ pub unsafe fn print256(i: __m256i) {
     println!("{:016x}{:016x}{:016x}{:016x}\n", buf[3], buf[2], buf[1], buf[0]);
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx")]
 pub unsafe fn print_char256(i: __m256i) {
     let mut buf = [0u8; 0x20];
@@ -145,7 +143,7 @@ pub fn print_bool_bitmask(m: &[bool]) {
 }
 
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx")]
 pub unsafe fn print_mask256(i: __m256i) {
     let m: i32 = _mm256_movemask_epi8(i);

@@ -20,11 +20,8 @@ impl XorMaskedAdjacent for Generic {
     }
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 mod x86 {
-    #[cfg(target_arch = "x86")]
-    use core::arch::x86::*;
-    #[cfg(target_arch = "x86_64")]
     use core::arch::x86_64::*;
 
     use super::XorMaskedAdjacent;
@@ -62,7 +59,7 @@ mod x86 {
     }
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 pub use x86::*;
 
 #[cfg(test)]
@@ -98,7 +95,7 @@ mod tests {
     fn run_test(bitstring: u64, mask: u64, lo_fill: bool, output: u64) {
         let generic = Generic {};
         generic.run_test(bitstring, mask, lo_fill, output);
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[cfg(target_arch = "x86_64")]
         match Bmi2::new() {
             None => (),
             Some(bmi2) => bmi2.run_test(bitstring, mask, lo_fill, output)

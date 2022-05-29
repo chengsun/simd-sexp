@@ -121,11 +121,8 @@ impl ClassifierBuilder for GenericBuilder {
     }
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 mod x86 {
-    #[cfg(target_arch = "x86")]
-    use core::arch::x86::*;
-    #[cfg(target_arch = "x86_64")]
     use core::arch::x86_64::*;
 
     use super::{Classifier, ClassifierBuilder, GenericClassifier, LookupTables};
@@ -254,7 +251,7 @@ mod x86 {
     }
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 pub use x86::*;
 
 #[cfg(target_arch = "aarch64")]
@@ -347,7 +344,7 @@ mod tests {
                     assert_eq!(expected_result, generic_result, "at index {}", i);
 
 
-                    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                    #[cfg(target_arch = "x86_64")]
                     match Ssse3Builder::new() {
                         None => (),
                         Some(classifier_builder) => {
@@ -365,7 +362,7 @@ mod tests {
                         }
                     }
 
-                    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                    #[cfg(target_arch = "x86_64")]
                     match Avx2Builder::new() {
                         None => (),
                         Some(classifier_builder) => {

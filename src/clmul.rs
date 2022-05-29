@@ -25,12 +25,9 @@ impl Clmul for Generic {
     }
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 mod x86 {
     use super::Clmul;
-    #[cfg(target_arch = "x86")]
-    use core::arch::x86::*;
-    #[cfg(target_arch = "x86_64")]
     use core::arch::x86_64::*;
 
     #[derive(Copy, Clone, Debug)]
@@ -60,7 +57,7 @@ mod x86 {
     }
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 pub use x86::*;
 
 #[cfg(target_arch = "aarch64")]
@@ -129,7 +126,7 @@ mod tests {
         let generic = Generic::new();
         generic.run_test(input, output);
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[cfg(target_arch = "x86_64")]
         match Sse2Pclmulqdq::new() {
             Some(sse2_pclmulqdq) => sse2_pclmulqdq.run_test(input, output),
             None => (),

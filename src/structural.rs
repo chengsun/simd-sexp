@@ -78,11 +78,8 @@ pub fn not_atom_like_lookup_tables() -> vector_classifier::LookupTables {
     vector_classifier::LookupTables::from_accepting_chars(b" \t\n()\"").unwrap()
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 mod x86 {
-    #[cfg(target_arch = "x86")]
-    use core::arch::x86::*;
-    #[cfg(target_arch = "x86_64")]
     use core::arch::x86_64::*;
 
     use crate::{clmul, vector_classifier, xor_masked_adjacent, utils, find_quote_transitions, ranges};
@@ -254,12 +251,11 @@ mod x86 {
     }
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 pub use x86::*;
 
 #[cfg(target_arch = "aarch64")]
 mod aarch64 {
-    #[cfg(target_arch = "aarch64")]
     use core::arch::aarch64::*;
 
     use crate::{clmul, vector_classifier, xor_masked_adjacent, utils, find_quote_transitions, ranges};
@@ -435,7 +431,7 @@ pub trait MakeClassifierCps<'a> {
 }
 
 pub fn make_classifier_cps<'a, Cps: MakeClassifierCps<'a>>(cps: Cps) -> Cps::Return {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(target_arch = "x86_64")]
     {
         match Avx2::new() {
             Some(classifier) => {
@@ -500,7 +496,7 @@ mod tests {
         let mut generic = Generic::new();
         generic.run_test(input, output);
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[cfg(target_arch = "x86_64")]
         match Avx2::new() {
             Some(mut avx2) => {
                 avx2.run_test(input, output);
@@ -552,7 +548,7 @@ mod tests {
             assert_eq!(output, expected_output);
         }
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[cfg(target_arch = "x86_64")]
         {
             let mut avx2 = Avx2::new().unwrap();
             let mut output: Vec<bool> = Vec::new();
@@ -617,7 +613,7 @@ mod tests {
                 output
             };
 
-            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+            #[cfg(target_arch = "x86_64")]
             {
                 let mut avx2 = Avx2::new().unwrap();
                 let mut output: Vec<bool> = Vec::new();
