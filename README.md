@@ -17,7 +17,7 @@ Runs at:
 *  640MiB/s on an Intel Cascade Lake Xeon server CPU (using 5 threads, generic code);
 *  900MiB/s on an Intel Kaby Lake laptop CPU (using 4 threads, specialised AVX2 code);
 *  410MiB/s on an Intel Kaby Lake laptop CPU (using 4 threads, generic code);
-*  2000MiB/s on an Apple M1 Pro (using 5 threads, specialised NEON code).
+*  2300MiB/s on an Apple M1 Pro (using 5 threads, specialised NEON code).
 *  960MiB/s on an Apple M1 Pro (using 5 threads, generic code).
 
 (The numbers above are comparable to each other, having been run on the same

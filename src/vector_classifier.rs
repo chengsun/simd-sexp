@@ -283,7 +283,7 @@ mod neon {
 
         #[target_feature(enable = "neon")]
         #[inline]
-        pub unsafe fn classify_avx2(&self, in_out: &mut [uint8x16_t]) {
+        pub unsafe fn classify_neon(&self, in_out: &mut [uint8x16_t]) {
             let lo_nibble_epi8 = vdupq_n_u8(0xF);
 
             for i in 0..in_out.len() {
@@ -299,7 +299,7 @@ mod neon {
         fn classify(&self, in_out: &mut [u8]) {
             let (prefix, aligned, suffix) = unsafe { in_out.align_to_mut::<uint8x16_t>() };
             self.generic.classify(prefix);
-            unsafe { self.classify_avx2(aligned); }
+            unsafe { self.classify_neon(aligned); }
             self.generic.classify(suffix);
         }
     }
