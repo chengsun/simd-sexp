@@ -38,14 +38,12 @@ mod x86 {
 
     impl Sse2Pclmulqdq {
         pub fn new() -> Option<Self> {
-            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             if is_x86_feature_detected!("sse2") && is_x86_feature_detected!("pclmulqdq") {
                 return Some(Self { _feature_detected_witness: () });
             }
             None
         }
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         #[target_feature(enable = "sse2,pclmulqdq")]
         #[inline]
         unsafe fn _clmul(&self, input: u64) -> u64 {
@@ -57,13 +55,48 @@ mod x86 {
         #[inline(always)]
         fn clmul(&self, input: u64) -> u64 {
             let () = self._feature_detected_witness;
-            return unsafe { self._clmul(input) };
+            unsafe { self._clmul(input) }
         }
     }
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub use x86::*;
+
+#[cfg(target_arch = "aarch64")]
+mod aarch64 {
+    use super::Clmul;
+    use std::arch::is_aarch64_feature_detected;
+    use std::arch::aarch64::*;
+
+    pub struct Neon { _feature_detected_witness: () }
+
+    impl Neon {
+        pub fn new() -> Option<Self> {
+            if is_aarch64_feature_detected!("neon") && is_aarch64_feature_detected!("aes") {
+                return Some(Self { _feature_detected_witness: () });
+            }
+            None
+        }
+
+        #[target_feature(enable = "neon,aes")]
+        #[inline]
+        unsafe fn _clmul(&self, input: u64) -> u64 {
+            vmull_p64(input, !0u64) as u64
+        }
+    }
+
+    impl Clmul for Neon {
+        #[inline(always)]
+        fn clmul(&self, input: u64) -> u64 {
+            let () = self._feature_detected_witness;
+            unsafe { self._clmul(input) }
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+pub use aarch64::*;
 
 #[cfg(test)]
 mod tests {
@@ -97,6 +130,12 @@ mod tests {
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         match Sse2Pclmulqdq::new() {
+            Some(sse2_pclmulqdq) => sse2_pclmulqdq.run_test(input, output),
+            None => (),
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        match Neon::new() {
             Some(sse2_pclmulqdq) => sse2_pclmulqdq.run_test(input, output),
             None => (),
         }
