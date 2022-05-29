@@ -338,8 +338,8 @@ mod aarch64 {
 
             let parens = vorrq_u8(lparen, rparen);
 
-            let atom_like = input.clone();
-            self.atom_terminator_classifier.classify_neon(&mut [atom_like]);
+            let mut atom_like = input.clone();
+            self.atom_terminator_classifier.classify_neon(std::slice::from_mut(&mut atom_like));
             let atom_like = vceqq_u8(atom_like, vdupq_n_u8(0));
 
             ClassifyOneNeon {
