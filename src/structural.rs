@@ -157,10 +157,10 @@ mod x86 {
         #[inline]
         unsafe fn classify_one_avx2(&self, input: __m256i) -> ClassifyOneAvx2
         {
-            let lparen = _mm256_cmpeq_epi8(input, _mm256_set1_epi8('(' as i8));
-            let rparen = _mm256_cmpeq_epi8(input, _mm256_set1_epi8(')' as i8));
-            let quote = _mm256_cmpeq_epi8(input, _mm256_set1_epi8('"' as i8));
-            let backslash = _mm256_cmpeq_epi8(input, _mm256_set1_epi8('\\' as i8));
+            let lparen = _mm256_cmpeq_epi8(input, _mm256_set1_epi8(b'(' as i8));
+            let rparen = _mm256_cmpeq_epi8(input, _mm256_set1_epi8(b')' as i8));
+            let quote = _mm256_cmpeq_epi8(input, _mm256_set1_epi8(b'"' as i8));
+            let backslash = _mm256_cmpeq_epi8(input, _mm256_set1_epi8(b'\\' as i8));
 
             let parens = _mm256_or_si256(lparen, rparen);
 
@@ -256,6 +256,179 @@ mod x86 {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub use x86::*;
+
+#[cfg(target_arch = "aarch64")]
+mod aarch64 {
+    #[cfg(target_arch = "aarch64")]
+    use core::arch::aarch64::*;
+
+    use crate::{clmul, vector_classifier, xor_masked_adjacent, utils, find_quote_transitions, ranges};
+    use vector_classifier::ClassifierBuilder;
+    use clmul::Clmul;
+
+    use super::{Classifier, CallbackResult, Generic, not_atom_like_lookup_tables};
+
+    #[derive(Clone, Debug)]
+    pub struct Neon {
+        /* constants */
+        clmul: clmul::Neon,
+        atom_terminator_classifier: vector_classifier::GenericClassifier,
+        xor_masked_adjacent: xor_masked_adjacent::Generic,
+
+        /* fallback */
+        generic: Generic,
+
+        /* varying */
+        escape: bool,
+        quote_state: bool,
+        atom_like: bool,
+    }
+
+    struct ClassifyOneNeon {
+        parens: uint8x16_t,
+        quote: uint8x16_t,
+        backslash: uint8x16_t,
+        atom_like: uint8x16_t,
+    }
+
+    impl Neon {
+        pub fn new() -> Option<Self> {
+            let clmul = clmul::Neon::new()?;
+            let vector_classifier_builder = vector_classifier::GenericBuilder::new();
+            let xor_masked_adjacent = xor_masked_adjacent::Generic::new();
+
+            let lookup_tables = not_atom_like_lookup_tables();
+            let atom_terminator_classifier = vector_classifier_builder.build(&lookup_tables);
+
+            let generic = Generic::new();
+
+            Some(Self {
+                clmul,
+                atom_terminator_classifier,
+                xor_masked_adjacent,
+                generic,
+                escape: false,
+                quote_state: false,
+                atom_like: false,
+            })
+        }
+
+        fn copy_state_from_generic(&mut self) {
+            self.escape = self.generic.escape;
+            self.quote_state = self.generic.quote_state;
+            self.atom_like = self.generic.atom_like;
+        }
+
+        fn copy_state_to_generic(&mut self) {
+            self.generic.escape = self.escape;
+            self.generic.quote_state = self.quote_state;
+            self.generic.atom_like = self.atom_like;
+        }
+
+        pub fn get_generic_state(&mut self) -> Generic {
+            self.copy_state_to_generic();
+            self.generic
+        }
+
+        #[target_feature(enable = "neon,aes")]
+        #[inline]
+        unsafe fn classify_one_neon(&self, input: uint8x16_t) -> ClassifyOneNeon {
+            use vector_classifier::Classifier;
+
+            let lparen = vceqq_u8(input, vdupq_n_u8(b'('));
+            let rparen = vceqq_u8(input, vdupq_n_u8(b')'));
+            let quote = vceqq_u8(input, vdupq_n_u8(b'"'));
+            let backslash = vceqq_u8(input, vdupq_n_u8(b'\\'));
+
+            let parens = vorrq_u8(lparen, rparen);
+
+            let mut a = [0u8; 16];
+            vst1q_u8(&mut a as *mut u8, input);
+            self.atom_terminator_classifier.classify(&mut a[..]);
+            let atom_like = vld1q_u8(&mut a as *mut u8);
+            let atom_like = vceqq_u8(atom_like, vdupq_n_u8(0));
+
+            ClassifyOneNeon {
+                parens,
+                quote,
+                backslash,
+                atom_like,
+            }
+        }
+
+        #[target_feature(enable = "neon,aes")]
+        #[inline]
+        unsafe fn structural_indices_bitmask_one_neon(&mut self, input: uint8x16x4_t) -> u64 {
+            let classify_0 = self.classify_one_neon(input.0);
+            let classify_1 = self.classify_one_neon(input.1);
+            let classify_2 = self.classify_one_neon(input.2);
+            let classify_3 = self.classify_one_neon(input.3);
+
+            let bm_parens = utils::make_bitmask(uint8x16x4_t(classify_0.parens, classify_1.parens, classify_2.parens, classify_3.parens));
+            let bm_quote = utils::make_bitmask(uint8x16x4_t(classify_0.quote, classify_1.quote, classify_2.quote, classify_3.quote));
+            let bm_backslash = utils::make_bitmask(uint8x16x4_t(classify_0.backslash, classify_1.backslash, classify_2.backslash, classify_3.backslash));
+            let bm_atom_like = utils::make_bitmask(uint8x16x4_t(classify_0.atom_like, classify_1.atom_like, classify_2.atom_like, classify_3.atom_like));
+            let (escaped, escape_state) = ranges::odd_range_ends(bm_backslash, self.escape);
+            self.escape = escape_state;
+
+            let escaped_quotes = bm_quote & escaped;
+            let unescaped_quotes = bm_quote & !escaped;
+            let prev_quote_state = self.quote_state;
+            let (quote_transitions, quote_state) = find_quote_transitions::find_quote_transitions(&self.clmul, &self.xor_masked_adjacent, unescaped_quotes, escaped_quotes, self.quote_state);
+            self.quote_state = quote_state;
+            let quoted_areas = self.clmul.clmul(quote_transitions) ^ (if prev_quote_state { !0u64 } else { 0u64 });
+
+            let bm_atom_like = bm_atom_like & !quoted_areas;
+
+            let special = (quote_transitions & quoted_areas) | (!quoted_areas & (bm_parens | ranges::range_transitions(bm_atom_like, self.atom_like)));
+
+            self.atom_like = bm_atom_like >> 63 != 0;
+
+            special
+        }
+    }
+
+    impl Classifier for Neon {
+        const NAME: &'static str = "NEON";
+
+        #[inline(always)]
+        fn structural_indices_bitmask<F: FnMut(u64, usize) -> CallbackResult>(&mut self, input_buf: &[u8], mut f: F) {
+            let (prefix, aligned, suffix) = unsafe { input_buf.align_to::<uint8x16x4_t>() };
+            if utils::unlikely(prefix.len() > 0) {
+                self.copy_state_to_generic();
+                let (bitmask, len) = self.generic.structural_indices_bitmask_one(prefix);
+                self.copy_state_from_generic();
+                debug_assert!(len == prefix.len());
+                match f(bitmask, len) {
+                    CallbackResult::Continue => (),
+                    CallbackResult::Finish => { return; },
+                }
+            }
+            for input in aligned {
+                unsafe {
+                    let bitmask = self.structural_indices_bitmask_one_neon(*input);
+                    match f(bitmask, 64) {
+                        CallbackResult::Continue => (),
+                        CallbackResult::Finish => { return; },
+                    }
+                }
+            }
+            if utils::unlikely(suffix.len() > 0) {
+                self.copy_state_to_generic();
+                let (bitmask, len) = self.generic.structural_indices_bitmask_one(suffix);
+                self.copy_state_from_generic();
+                debug_assert!(len == suffix.len());
+                match f(bitmask, len) {
+                    CallbackResult::Continue => (),
+                    CallbackResult::Finish => { return; },
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+pub use aarch64::*;
 
 pub trait MakeClassifierCps<'a> {
     type Return;

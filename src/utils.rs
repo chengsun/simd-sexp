@@ -2,6 +2,8 @@
 use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
+#[cfg(target_arch = "aarch64")]
+use core::arch::aarch64::*;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
@@ -9,6 +11,19 @@ use core::arch::x86_64::*;
 pub unsafe fn make_bitmask(lo: __m256i, hi: __m256i) -> u64 {
     (_mm256_movemask_epi8(lo) as u32 as u64) |
     ((_mm256_movemask_epi8(hi) as u32 as u64) << 32)
+}
+
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+#[inline]
+pub unsafe fn make_bitmask(v: uint8x16x4_t) -> u64 {
+    // By aqrit: https://branchfree.org/2019/04/01/fitting-my-head-through-the-arm-holes-or-two-sequences-to-substitute-for-the-missing-pmovmskb-instruction-on-arm-neon/#comment-1768
+    let t0 = vsriq_n_u8(v.1, v.0, 1);
+    let t1 = vsriq_n_u8(v.3, v.2, 1);
+    let t2 = vsriq_n_u8(t1, t0, 2);
+    let t3 = vsriq_n_u8(t2, t2, 4);
+    let t4 = vshrn_n_u16(vreinterpretq_u16_u8(t3), 4);
+    vget_lane_u64(vreinterpret_u64_u8(t4), 0)
 }
 
 pub fn print64(i: u64) {

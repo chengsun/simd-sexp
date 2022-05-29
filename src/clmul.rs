@@ -69,6 +69,7 @@ mod aarch64 {
     use std::arch::is_aarch64_feature_detected;
     use std::arch::aarch64::*;
 
+    #[derive(Copy, Clone, Debug)]
     pub struct Neon { _feature_detected_witness: () }
 
     impl Neon {
