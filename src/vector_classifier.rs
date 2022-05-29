@@ -257,32 +257,6 @@ mod x86 {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub use x86::*;
 
-pub struct RuntimeDetectBuilder {}
-
-impl RuntimeDetectBuilder {
-    pub fn new() -> Self { RuntimeDetectBuilder {} }
-}
-
-impl ClassifierBuilder for RuntimeDetectBuilder {
-    type Classifier = Box<dyn Classifier>;
-    fn build(&self, lookup_tables: &LookupTables) -> Self::Classifier {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        match Avx2Builder::new () {
-            None => (),
-            Some(builder) => { return Box::new(builder.build(lookup_tables)); }
-        }
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        match Ssse3Builder::new () {
-            None => (),
-            Some(builder) => { return Box::new(builder.build(lookup_tables)); }
-        }
-        Box::new(GenericBuilder::new().build(lookup_tables))
-    }
-}
-
-pub fn runtime_detect() -> RuntimeDetectBuilder {
-    RuntimeDetectBuilder::new()
-}
 
 #[cfg(test)]
 mod tests {

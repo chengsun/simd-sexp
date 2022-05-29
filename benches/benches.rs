@@ -54,6 +54,19 @@ fn bench_structural(c: &mut Criterion) {
 
         let mut group = c.benchmark_group("sexp-structure");
         group.throughput(Throughput::Bytes(input_pp.len() as u64));
+
+        {
+            let mut generic_classifier = structural::Generic::new();
+            group.bench_function("generic",
+                                    |b| b.iter(|| {
+                                        generic_classifier.structural_indices_bitmask(&input_pp[..], |bitmask, len| {
+                                            let _ = black_box((bitmask, len));
+                                            structural::CallbackResult::Continue
+                                        })
+                                    }));
+        }
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         match structural::Avx2::new() {
             None => (),
             Some(mut classifier) => {
@@ -66,6 +79,7 @@ fn bench_structural(c: &mut Criterion) {
                                      }));
             }
         }
+
         group.finish();
     }
 }
@@ -161,6 +175,8 @@ fn bench_find_quote_transitions(c: &mut Criterion) {
                          |b| b.iter(|| black_box(find_quote_transitions::find_quote_transitions(
                              &generic_clmul, &generic_xor_masked_adjacent,
                              unescaped, escaped, prev_state))));
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     match (clmul::Sse2Pclmulqdq::new(), xor_masked_adjacent::Bmi2::new()) {
         (Some(clmul), Some(xor_masked_adjacent)) => {
             group.bench_function("haswell",
@@ -170,12 +186,18 @@ fn bench_find_quote_transitions(c: &mut Criterion) {
         },
         _ => (),
     }
-    let runtime_detect_clmul = clmul::runtime_detect();
-    let runtime_detect_xor_masked_adjacent = xor_masked_adjacent::runtime_detect();
-    group.bench_function("runtime-detect",
-                         |b| b.iter(|| black_box(find_quote_transitions::find_quote_transitions(
-                             &runtime_detect_clmul, &runtime_detect_xor_masked_adjacent,
-                             unescaped, escaped, prev_state))));
+
+    #[cfg(target_arch = "aarch64")]
+    match clmul::Neon::new() {
+        Some(clmul) => {
+            group.bench_function("neon",
+                                 |b| b.iter(|| black_box(find_quote_transitions::find_quote_transitions(
+                                     &clmul, &generic_xor_masked_adjacent,
+                                     unescaped, escaped, prev_state))));
+        },
+        _ => (),
+    }
+
     group.finish();
 }
 
@@ -191,12 +213,12 @@ fn bench_start_stop_transitions(c: &mut Criterion) {
     let mut group = c.benchmark_group("start_stop_transitions");
     group.throughput(Throughput::Bytes(8));
 
-    let runtime_detect_start_stop_transitions = start_stop_transitions::runtime_detect();
-    group.bench_function("runtime-detect",
-                         |b| b.iter(|| black_box(runtime_detect_start_stop_transitions.start_stop_transitions(start, stop, prev_state))));
     let generic_start_stop_transitions = start_stop_transitions::Generic::new(clmul::Generic::new(), xor_masked_adjacent::Generic::new());
     group.bench_function("generic",
                          |b| b.iter(|| black_box(generic_start_stop_transitions.start_stop_transitions(start, stop, prev_state))));
+
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     match start_stop_transitions::Bmi2::new() {
         None => (),
         Some(bmi2_start_stop_transitions) => {
@@ -239,6 +261,8 @@ fn bench_vector_classifier(c: &mut Criterion) {
                          |b| b.iter_batched(|| bytes.clone(), |mut bytes| {
                              black_box(generic_classifier.classify(&mut bytes));
                          }, BatchSize::SmallInput));
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     match vector_classifier::Ssse3Builder::new() {
         None => (),
         Some(ssse3_builder) => {
@@ -250,6 +274,8 @@ fn bench_vector_classifier(c: &mut Criterion) {
                                  }, BatchSize::SmallInput));
         }
     }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     match vector_classifier::Avx2Builder::new() {
         None => (),
         Some(avx2_builder) => {
@@ -282,9 +308,8 @@ fn bench_xor_masked_adjacent(c: &mut Criterion) {
     let generic = xor_masked_adjacent::Generic::new();
     group.bench_function("generic",
                          |b| b.iter(|| black_box(generic.xor_masked_adjacent(bitstring, mask, lo_fill))));
-    let runtime_detect = xor_masked_adjacent::runtime_detect();
-    group.bench_function("runtime-detect",
-                         |b| b.iter(|| black_box(runtime_detect.xor_masked_adjacent(bitstring, mask, lo_fill))));
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     match xor_masked_adjacent::Bmi2::new() {
         None => (),
         Some(bmi2) => {
