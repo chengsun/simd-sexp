@@ -272,7 +272,7 @@ mod aarch64 {
     pub struct Neon {
         /* constants */
         clmul: clmul::Neon,
-        atom_terminator_classifier: vector_classifier::GenericClassifier,
+        atom_terminator_classifier: vector_classifier::NeonClassifier,
         xor_masked_adjacent: xor_masked_adjacent::Generic,
 
         /* fallback */
@@ -294,7 +294,7 @@ mod aarch64 {
     impl Neon {
         pub fn new() -> Option<Self> {
             let clmul = clmul::Neon::new()?;
-            let vector_classifier_builder = vector_classifier::GenericBuilder::new();
+            let vector_classifier_builder = vector_classifier::NeonBuilder::new()?;
             let xor_masked_adjacent = xor_masked_adjacent::Generic::new();
 
             let lookup_tables = not_atom_like_lookup_tables();

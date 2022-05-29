@@ -257,6 +257,77 @@ mod x86 {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub use x86::*;
 
+#[cfg(target_arch = "aarch64")]
+mod neon {
+    use std::arch::is_aarch64_feature_detected;
+    use core::arch::aarch64::*;
+
+    use super::{Classifier, ClassifierBuilder, GenericClassifier, LookupTables};
+
+    #[derive(Clone, Debug)]
+    pub struct NeonClassifier {
+        generic: GenericClassifier,
+        shuffle_table_lo: uint8x16_t,
+        shuffle_table_hi: uint8x16_t,
+        _feature_detected_witness: (),
+    }
+
+    impl NeonClassifier {
+        #[target_feature(enable = "neon")]
+        pub unsafe fn new(lookup_tables: &LookupTables) -> Self {
+            let generic = GenericClassifier::new(lookup_tables);
+            let shuffle_table_lo = vld1q_u8(&generic.lookup_tables.shuffle_table_lo as *const u8);
+            let shuffle_table_hi = vld1q_u8(&generic.lookup_tables.shuffle_table_hi as *const u8);
+            return Self { generic, shuffle_table_lo, shuffle_table_hi, _feature_detected_witness: () };
+        }
+
+        #[target_feature(enable = "neon")]
+        #[inline]
+        pub unsafe fn classify_avx2(&self, in_out: &mut [uint8x16_t]) {
+            let lo_nibble_epi8 = vdupq_n_u8(0xF);
+
+            for i in 0..in_out.len() {
+                in_out[i] =
+                    vandq_u8(
+                        vqtbl1q_u8(self.shuffle_table_lo, vandq_u8(in_out[i], lo_nibble_epi8)),
+                        vqtbl1q_u8(self.shuffle_table_hi, vandq_u8(vshrq_n_u8(in_out[i], 4), lo_nibble_epi8)));
+            }
+        }
+    }
+
+    impl Classifier for NeonClassifier {
+        fn classify(&self, in_out: &mut [u8]) {
+            let (prefix, aligned, suffix) = unsafe { in_out.align_to_mut::<uint8x16_t>() };
+            self.generic.classify(prefix);
+            unsafe { self.classify_avx2(aligned); }
+            self.generic.classify(suffix);
+        }
+    }
+
+    pub struct NeonBuilder {
+        _feature_detected_witness: (),
+    }
+
+    impl NeonBuilder {
+        pub fn new() -> Option<Self> {
+            if is_aarch64_feature_detected!("neon") {
+                return Some(NeonBuilder { _feature_detected_witness: () });
+            }
+            None
+        }
+    }
+
+    impl ClassifierBuilder for NeonBuilder {
+        type Classifier = NeonClassifier;
+        fn build(&self, lookup_tables: &LookupTables) -> Self::Classifier {
+            let _ = self._feature_detected_witness;
+            unsafe { NeonClassifier::new(lookup_tables) }
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+pub use neon::*;
 
 #[cfg(test)]
 mod tests {
@@ -294,7 +365,6 @@ mod tests {
                         }
                     }
 
-
                     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
                     match Avx2Builder::new() {
                         None => (),
@@ -308,8 +378,26 @@ mod tests {
                                     panic!("Expected all bytes to be the same classification");
                                 }
                             }
-                            let ssse3_result = results[0];
-                            assert_eq!(expected_result, ssse3_result, "at index {}", i);
+                            let avx2_result = results[0];
+                            assert_eq!(expected_result, avx2_result, "at index {}", i);
+                        }
+                    }
+
+                    #[cfg(target_arch = "aarch64")]
+                    match NeonBuilder::new() {
+                        None => (),
+                        Some(classifier_builder) => {
+                            let classifier = classifier_builder.build(&lookup_tables);
+                            let mut in_out = [i; 128];
+                            classifier.classify(&mut in_out);
+                            let results = in_out.map(|x| x != 0);
+                            for result in results {
+                                if result != results[0] {
+                                    panic!("Expected all bytes to be the same classification");
+                                }
+                            }
+                            let neon_result = results[0];
+                            assert_eq!(expected_result, neon_result, "at index {}", i);
                         }
                     }
                 }
