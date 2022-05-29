@@ -302,6 +302,19 @@ fn bench_vector_classifier(c: &mut Criterion) {
         }
     }
 
+    #[cfg(target_arch = "aarch64")]
+    match vector_classifier::NeonBuilder::new() {
+        None => (),
+        Some(neon_builder) => {
+            let neon_classifier = neon_builder.build(&lookup_tables);
+            group.bench_function("neon",
+                                 |b| b.iter_batched(|| bytes.clone(), |mut bytes| {
+                                     neon_classifier.classify(&mut bytes);
+                                     black_box(bytes);
+                                 }, BatchSize::SmallInput));
+        }
+    }
+
     group.finish();
 }
 
