@@ -5,6 +5,18 @@ use core::arch::x86_64::*;
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
 
+pub fn make_bitmask_generic(input: &[u8]) -> u64 {
+    let mut result = 0u64;
+    for i in 0..64 {
+        match input[i] {
+            0x00 => (),
+            0xFF => { result |= 1 << i; },
+            b => panic!("unexpected byte: {:x}", b),
+        }
+    }
+    result
+}
+
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 #[inline]
@@ -16,7 +28,7 @@ pub unsafe fn make_bitmask(lo: __m256i, hi: __m256i) -> u64 {
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 #[inline]
-pub unsafe fn make_bitmask(v: uint8x16x4_t) -> u64 {
+pub unsafe fn make_bitmask_ld4_interleaved(v: uint8x16x4_t) -> u64 {
     // By aqrit: https://branchfree.org/2019/04/01/fitting-my-head-through-the-arm-holes-or-two-sequences-to-substitute-for-the-missing-pmovmskb-instruction-on-arm-neon/#comment-1768
     let t0 = vsriq_n_u8(v.1, v.0, 1);
     let t1 = vsriq_n_u8(v.3, v.2, 1);
@@ -24,6 +36,31 @@ pub unsafe fn make_bitmask(v: uint8x16x4_t) -> u64 {
     let t3 = vsriq_n_u8(t2, t2, 4);
     let t4 = vshrn_n_u16(vreinterpretq_u16_u8(t3), 4);
     vget_lane_u64(vreinterpret_u64_u8(t4), 0)
+}
+
+#[test]
+fn test_make_bitmask() {
+    use rand::{prelude::Distribution, Rng, SeedableRng};
+
+    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+
+    for _ in 0..1000 {
+        let mut input = [0u8; 64];
+
+        for i in 0..64 {
+            if rng.gen_bool(0.5) {
+                input[i] = 0xFF;
+            }
+        }
+
+        let bm_generic = make_bitmask_generic(&input[..]);
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            let bm_neon = unsafe { make_bitmask_ld4_interleaved(vld4q_u8(&input[0] as *const u8)) };
+            assert_eq!(bm_generic, bm_neon);
+        }
+    }
 }
 
 pub fn print64(i: u64) {

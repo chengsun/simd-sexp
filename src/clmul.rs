@@ -137,7 +137,7 @@ mod tests {
 
         #[cfg(target_arch = "aarch64")]
         match Neon::new() {
-            Some(sse2_pclmulqdq) => sse2_pclmulqdq.run_test(input, output),
+            Some(neon) => neon.run_test(input, output),
             None => (),
         }
     }
