@@ -567,6 +567,21 @@ mod tests {
             }
             assert_eq!(output, expected_output);
         }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            let mut neon = Neon::new().unwrap();
+            let mut output: Vec<bool> = Vec::new();
+            for input in [&input_1[..], &input_2.0[..]] {
+                neon.structural_indices_bitmask(&input[..], |bitmask, bitmask_len| {
+                    for i in 0..bitmask_len {
+                        output.push(bitmask & (1 << i) != 0);
+                    }
+                    CallbackResult::Finish
+                });
+            }
+            assert_eq!(output, expected_output);
+        }
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
