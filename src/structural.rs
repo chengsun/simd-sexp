@@ -445,6 +445,17 @@ pub fn make_classifier_cps<'a, Cps: MakeClassifierCps<'a>>(cps: Cps) -> Cps::Ret
             None => (),
         }
     }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        match Neon::new() {
+            Some(classifier) => {
+                return cps.f(classifier);
+            },
+            None => (),
+        }
+    }
+
     cps.f(Generic::new())
 }
 
@@ -492,6 +503,15 @@ mod tests {
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         match Avx2::new() {
+            Some(mut avx2) => {
+                avx2.run_test(input, output);
+                assert_eq!(generic, avx2.get_generic_state());
+            },
+            None => (),
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        match Neon::new() {
             Some(mut avx2) => {
                 avx2.run_test(input, output);
                 assert_eq!(generic, avx2.get_generic_state());
