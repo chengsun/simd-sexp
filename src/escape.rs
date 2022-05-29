@@ -177,11 +177,6 @@ mod tests {
     fn run_test(input: &[u8], output: Option<&[u8]>) {
         let generic = GenericUnescape::new();
         generic.run_test(input, output);
-
-        // match Sse2Pclmulqdq::new() {
-        //     Some(sse2_pclmulqdq) => sse2_pclmulqdq.run_test(input, output),
-        //     None => (),
-        // }
     }
 
     #[test] fn test_backslash_b() { run_test(b"\\b", Some(&b"\x07"[..])); }
