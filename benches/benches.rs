@@ -80,6 +80,20 @@ fn bench_structural(c: &mut Criterion) {
             }
         }
 
+        #[cfg(target_arch = "aarch64")]
+        match structural::Neon::new() {
+            None => (),
+            Some(mut classifier) => {
+                group.bench_function("neon",
+                                     |b| b.iter(|| {
+                                         classifier.structural_indices_bitmask(&input_pp[..], |bitmask, len| {
+                                             let _ = black_box((bitmask, len));
+                                             structural::CallbackResult::Continue
+                                         })
+                                     }));
+            }
+        }
+
         group.finish();
     }
 }
