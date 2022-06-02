@@ -14,7 +14,7 @@ impl XorMaskedAdjacent for Generic {
     fn xor_masked_adjacent(&self, bitstring: u64, mask: u64, lo_fill: bool) -> u64 {
         let bitstring = bitstring & mask;
         let i1 = mask.wrapping_sub(bitstring << 1);
-        let lsb = mask & (-(mask as i64) as u64);
+        let lsb = mask & mask.wrapping_neg();
         let i2 = i1 & !(if lo_fill { lsb } else { 0 });
         (!i2 ^ bitstring) & mask
     }
@@ -155,4 +155,14 @@ mod tests {
         let output___ = 0b1000100010101010000000000000000000000000000000000000000000000000;
         run_test(bitstring, mask_____, lo_fill__, output___);
     }
+
+    #[test]
+    fn test_7() {
+        let bitstring = 0b0000000000000000000000000000000000000000000000000000000000000000;
+        let mask_____ = 0b0000000000000000000000000000000000000000000000000000000000000001;
+        let lo_fill__ = false;
+        let output___ = 0b0000000000000000000000000000000000000000000000000000000000000000;
+        run_test(bitstring, mask_____, lo_fill__, output___);
+    }
+
 }
