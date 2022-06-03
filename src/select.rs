@@ -209,7 +209,7 @@ impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
     }
 
     #[inline(always)]
-    fn process_one<WriteT: Write>(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize) -> Result<usize, parser::Error> {
+    fn process_one<WriteT: Write>(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, parser::Error> {
         let ch = input.input[this_index - input.offset];
         match ch {
             b')' => {
@@ -223,6 +223,20 @@ impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
             },
             b' ' | b'\t' | b'\n' => (),
             _ => {
+                if is_eof && ch == b'"' {
+                    // We have to attempt to unescape the last atom just to
+                    // check validity.
+                    // TODO: this implementation is super bad!
+                    // TODO: the fact we have to do this here at all is fragile
+                    // and bad!
+                    let mut out: Vec<u8> = (this_index..next_index).map(|_| 0u8).collect();
+                    let (_, _) =
+                        escape::GenericUnescape::new()
+                        .unescape(
+                            &input.input[(this_index + 1 - input.offset)..(next_index - input.offset)],
+                            &mut out[..])
+                        .ok_or(parser::Error::BadQuotedAtom)?;
+                }
                 match self.stack[self.stack_pointer as usize] {
                     State::SelectNext(key_id) => {
                         self.stack[self.stack_pointer as usize] = State::Selected(key_id, this_index);
@@ -275,6 +289,9 @@ impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
     }
 
     fn process_eof<WriteT: Write>(&mut self, _writer: &mut WriteT) -> Result<(), parser::Error> {
+        if self.stack_pointer > 0 {
+            return Err(parser::Error::UnmatchedOpenParen);
+        }
         Ok(())
     }
 }
@@ -392,14 +409,15 @@ mod ocaml_ffi {
 mod tests {
     use super::*;
 
-    fn run_test(output_kind: OutputKind, input: &[u8], keys: &[&[u8]], expected_output: &[u8]) {
+    fn run_test(output_kind: OutputKind, input: &[u8], keys: &[&[u8]], expected_output: Result<&[u8], parser::Error>) {
         let mut output = Vec::new();
         let mut parser = make_parser(keys.iter().map(|x| *x), &mut output, output_kind, false);
-        let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut std::io::BufReader::new(input)).unwrap();
+        let ok = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut std::io::BufReader::new(input));
         std::mem::drop(parser);
+        let output = ok.map(move |()| output);
 
-        assert_eq!(std::str::from_utf8(&output[..]).unwrap(),
-                   std::str::from_utf8(expected_output).unwrap(),
+        assert_eq!(output.map(|output| String::from_utf8(output).unwrap()),
+                   expected_output.map(|expected_output| String::from_utf8(expected_output.to_owned()).unwrap()),
                    "output_kind: {:?}", output_kind);
     }
 
@@ -411,16 +429,16 @@ mod tests {
             OutputKind::Csv { atoms_as_sexps: false },
             input,
             keys,
-            br#"foo
+            Ok(br#"foo
 bar
-"#);
+"#));
         run_test(
             OutputKind::Csv { atoms_as_sexps: true },
             input,
             keys,
-            br#"foo
+            Ok(br#"foo
 bar
-"#);
+"#));
     }
 
     #[test]
@@ -431,16 +449,16 @@ bar
             OutputKind::Csv { atoms_as_sexps: false },
             input,
             keys,
-            br#"foo
+            Ok(br#"foo
 bar
-"#);
+"#));
         run_test(
             OutputKind::Csv { atoms_as_sexps: true },
             input,
             keys,
-            br#"foo
+            Ok(br#"foo
 """bar"""
-"#);
+"#));
     }
 
     #[test]
@@ -451,16 +469,16 @@ bar
             OutputKind::Csv { atoms_as_sexps: false },
             input,
             keys,
-            br#"foo
+            Ok(br#"foo
 bar
-"#);
+"#));
         run_test(
             OutputKind::Csv { atoms_as_sexps: true },
             input,
             keys,
-            br#"foo
+            Ok(br#"foo
 bar
-"#);
+"#));
     }
 
     #[test]
@@ -471,16 +489,16 @@ bar
             OutputKind::Csv { atoms_as_sexps: false },
             input,
             keys,
-            br#"foo
+            Ok(br#"foo
 "bar""baz"
-"#);
+"#));
         run_test(
             OutputKind::Csv { atoms_as_sexps: true },
             input,
             keys,
-            br#"foo
+            Ok(br#"foo
 """bar\""baz"""
-"#);
+"#));
     }
 
     #[test]
@@ -491,16 +509,16 @@ bar
             OutputKind::Csv { atoms_as_sexps: false },
             input,
             keys,
-            br#"foo
+            Ok(br#"foo
 bar baz
-"#);
+"#));
         run_test(
             OutputKind::Csv { atoms_as_sexps: true },
             input,
             keys,
-            br#"foo
+            Ok(br#"foo
 """bar baz"""
-"#);
+"#));
     }
 
     #[test]
@@ -511,16 +529,16 @@ bar baz
             OutputKind::Csv { atoms_as_sexps: false },
             input,
             keys,
-            br#"foo
+            Ok(br#"foo
 "bar,baz"
-"#);
+"#));
         run_test(
             OutputKind::Csv { atoms_as_sexps: true },
             input,
             keys,
-            br#"foo
+            Ok(br#"foo
 "bar,baz"
-"#);
+"#));
     }
 
     #[test]
@@ -531,15 +549,48 @@ bar baz
             OutputKind::Csv { atoms_as_sexps: false },
             input,
             keys,
-            br#"foo
+            Ok(br#"foo
 "bar, baz"
-"#);
+"#));
         run_test(
             OutputKind::Csv { atoms_as_sexps: true },
             input,
             keys,
-            br#"foo
+            Ok(br#"foo
 """bar, baz"""
-"#);
+"#));
+    }
+
+    #[test]
+    fn test_8() {
+        let input = b"(";
+        let keys = &[];
+        run_test(
+            OutputKind::Csv { atoms_as_sexps: false },
+            input,
+            keys,
+            Err(parser::Error::UnmatchedOpenParen));
+    }
+
+    #[test]
+    fn test_9() {
+        let input = b"\"";
+        let keys = &[];
+        run_test(
+            OutputKind::Csv { atoms_as_sexps: false },
+            input,
+            keys,
+            Err(parser::Error::BadQuotedAtom));
+    }
+
+    #[test]
+    fn test_empty() {
+        let input = b"";
+        let keys = &[];
+        run_test(
+            OutputKind::Csv { atoms_as_sexps: false },
+            input,
+            keys,
+            Ok(b"\n"));
     }
 }

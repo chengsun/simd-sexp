@@ -52,8 +52,8 @@ impl<WritingStage2T: parser::WritingStage2> parser::Stage2 for WritingStage2Adap
         self.writing_stage2.process_bof(&mut self.buffer, segment_index)
     }
     #[inline(always)]
-    fn process_one(&mut self, input: parser::Input, this_index: usize, next_index: usize) -> Result<usize, parser::Error> {
-        self.writing_stage2.process_one(&mut self.buffer, input, this_index, next_index)
+    fn process_one(&mut self, input: parser::Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, parser::Error> {
+        self.writing_stage2.process_one(&mut self.buffer, input, this_index, next_index, is_eof)
     }
     #[inline(always)]
     fn process_eof(&mut self) -> Result<Self::Return, parser::Error> {

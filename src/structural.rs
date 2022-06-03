@@ -579,7 +579,7 @@ mod tests {
         }
     }
 
-    //#[test]
+    #[test]
     fn test_random() {
         use rand::{prelude::Distribution, SeedableRng};
 

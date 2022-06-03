@@ -24,7 +24,7 @@ pub trait Stage2 {
     fn process_bof(&mut self, segment_index: SegmentIndex, input_size_hint: Option<usize>);
 
     /// Returns the input index that must be preserved for next call.
-    fn process_one(&mut self, input: Input, this_index: usize, next_index: usize) -> Result<usize, Error>;
+    fn process_one(&mut self, input: Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, Error>;
 
     fn process_eof(&mut self) -> Result<Self::Return, Error>;
 }
@@ -33,7 +33,7 @@ pub trait WritingStage2 {
     fn process_bof<WriteT: Write>(&mut self, writer: &mut WriteT, segment_index: SegmentIndex);
 
     /// Returns the input index that must be preserved for next call.
-    fn process_one<WriteT: Write>(&mut self, writer: &mut WriteT, input: Input, this_index: usize, next_index: usize) -> Result<usize, Error>;
+    fn process_one<WriteT: Write>(&mut self, writer: &mut WriteT, input: Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, Error>;
 
     fn process_eof<WriteT: Write>(&mut self, writer: &mut WriteT) -> Result<(), Error>;
 }
@@ -59,8 +59,9 @@ impl<'a, WriteT: Write, WritingStage2T: WritingStage2> Stage2 for WritingStage2A
     fn process_bof(&mut self, segment_index: SegmentIndex, _input_size_hint: Option<usize>) {
         self.writing_stage2.process_bof(self.writer, segment_index)
     }
-    fn process_one(&mut self, input: Input, this_index: usize, next_index: usize) -> Result<usize, Error> {
-        self.writing_stage2.process_one(self.writer, input, this_index, next_index)
+    #[inline(always)]
+    fn process_one(&mut self, input: Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, Error> {
+        self.writing_stage2.process_one(self.writer, input, this_index, next_index, is_eof)
     }
     fn process_eof(&mut self) -> Result<Self::Return, Error> {
         self.writing_stage2.process_eof(self.writer)
@@ -94,7 +95,7 @@ impl<VisitorT: Visitor> Stage2 for VisitorState<VisitorT> {
     }
 
     #[inline(always)]
-    fn process_one(&mut self, input: Input, this_index: usize, next_index: usize) -> Result<usize, Error> {
+    fn process_one(&mut self, input: Input, this_index: usize, next_index: usize, _is_eof: bool) -> Result<usize, Error> {
         match input.input[this_index - input.offset] {
             b'(' => {
                 let new_context = self.visitor.list_open(self.context_stack.last_mut());
@@ -116,7 +117,7 @@ impl<VisitorT: Visitor> Stage2 for VisitorState<VisitorT> {
                 let (_input_consumed, atom_string_len) =
                     self.unescape.unescape(&input.input[(start_index - input.offset)..],
                                            self.visitor.atom_borrow(&mut atom))
-                    .ok_or(Error::InvalidEscape)?;
+                    .ok_or(Error::BadQuotedAtom)?;
                 self.visitor.atom(atom, atom_string_len, self.context_stack.last_mut());
             },
             ch => {
@@ -141,7 +142,7 @@ impl<VisitorT: Visitor> Stage2 for VisitorState<VisitorT> {
         if self.context_stack.len() > 0 {
             return Err(Error::UnmatchedOpenParen);
         }
-        Ok (self.visitor.eof())
+        Ok(self.visitor.eof())
     }
 
 }
@@ -158,8 +159,7 @@ pub struct State<ClassifierT, Stage2T> {
 pub enum Error {
     UnmatchedOpenParen,
     UnmatchedCloseParen,
-    UnclosedQuote,
-    InvalidEscape,
+    BadQuotedAtom,
     IOError(std::io::ErrorKind),
 }
 
@@ -168,8 +168,7 @@ impl std::fmt::Display for Error {
         match self {
             Error::UnmatchedOpenParen => { write!(f, "Unmatched open paren") }
             Error::UnmatchedCloseParen => { write!(f, "Unmatched close paren") }
-            Error::UnclosedQuote => { write!(f, "Unclosed quote") }
-            Error::InvalidEscape => { write!(f, "Invalid escape") }
+            Error::BadQuotedAtom => { write!(f, "Bad quoted atom") }
             Error::IOError(e) => { write!(f, "IO error: {}", e) }
         }
     }
@@ -227,7 +226,8 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
                     self.stage2.process_one(
                         Input { input: &input[..], offset: input_start_index },
                         indices_buffer[indices_index],
-                        indices_buffer[indices_index + 1])?;
+                        indices_buffer[indices_index + 1],
+                        false)?;
                 debug_assert!(input_index_to_keep <= indices_buffer[indices_index + 1]);
             }
 
@@ -238,7 +238,8 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
                             self.stage2.process_one(
                                 Input { input: &input[..], offset: input_start_index },
                                 indices_buffer[indices_len - 1],
-                                input.len() + input_start_index)?;
+                                input.len() + input_start_index,
+                                true)?;
                         }
                         return self.stage2.process_eof();
                     },
@@ -296,12 +297,12 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
                 });
 
             for indices_index in 0..(indices_len.saturating_sub(1)) {
-                self.stage2.process_one(Input { input, offset: 0 }, indices_buffer[indices_index], indices_buffer[indices_index + 1])?;
+                self.stage2.process_one(Input { input, offset: 0 }, indices_buffer[indices_index], indices_buffer[indices_index + 1], false)?;
             }
 
             if input_index >= input.len() {
                 if indices_len > 0 {
-                    self.stage2.process_one(Input { input, offset: 0 }, indices_buffer[indices_len - 1], input.len())?;
+                    self.stage2.process_one(Input { input, offset: 0 }, indices_buffer[indices_len - 1], input.len(), true)?;
                 }
                 return self.stage2.process_eof();
             }
