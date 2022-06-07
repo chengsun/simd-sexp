@@ -42,7 +42,7 @@ required-features = ["threads", "vtune"]
 [[bin]]
 name = "select"
 path = "bin/select.rs"
-required-features = ["threads"]
+required-features = []
 
 [[bin]]
 name = "exec"
