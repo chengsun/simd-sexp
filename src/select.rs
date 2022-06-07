@@ -30,10 +30,10 @@ pub enum OutputKind {
     Csv { atoms_as_sexps: bool },
 }
 
-pub trait Output {
-    fn bof<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, segment_index: parser::SegmentIndex);
-    fn select<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, key_id: usize, input: &parser::Input, value_range: Range<usize>, has_output_on_line: bool);
-    fn eol<WriteT: Write>(&mut self, writer: &mut WriteT, input: &parser::Input);
+pub trait Output<WriteT> {
+    fn bof(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, segment_index: parser::SegmentIndex);
+    fn select(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, key_id: usize, input: &parser::Input, value_range: Range<usize>, has_output_on_line: bool);
+    fn eol(&mut self, writer: &mut WriteT, input: &parser::Input);
 }
 
 pub struct OutputValues {
@@ -45,15 +45,15 @@ impl OutputValues {
     }
 }
 
-impl Output for OutputValues {
-    fn bof<WriteT: Write>(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>, _segment_index: parser::SegmentIndex) {
+impl<WriteT: Write> Output<WriteT> for OutputValues {
+    fn bof(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>, _segment_index: parser::SegmentIndex) {
     }
-    fn select<WriteT: Write>(&mut self, writer: &mut WriteT, _keys: &Vec<&[u8]>, _key_id: usize, input: &parser::Input, value_range: Range<usize>, has_output_on_line: bool) {
+    fn select(&mut self, writer: &mut WriteT, _keys: &Vec<&[u8]>, _key_id: usize, input: &parser::Input, value_range: Range<usize>, has_output_on_line: bool) {
         let value = &input.input[(value_range.start - input.offset)..(value_range.end - input.offset)];
         writer.write_all(if has_output_on_line { &b" "[..] } else { &b"("[..] }).unwrap();
         writer.write_all(&value[..]).unwrap();
     }
-    fn eol<WriteT: Write>(&mut self, writer: &mut WriteT, _input: &parser::Input) {
+    fn eol(&mut self, writer: &mut WriteT, _input: &parser::Input) {
         writer.write(&b")\n"[..]).unwrap();
     }
 }
@@ -67,10 +67,10 @@ impl OutputLabeled {
     }
 }
 
-impl Output for OutputLabeled {
-    fn bof<WriteT: Write>(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>, _segment_index: parser::SegmentIndex) {
+impl<WriteT: Write> Output<WriteT> for OutputLabeled {
+    fn bof(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>, _segment_index: parser::SegmentIndex) {
     }
-    fn select<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, key_id: usize, input: &parser::Input, value_range: Range<usize>, has_output_on_line: bool) {
+    fn select(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, key_id: usize, input: &parser::Input, value_range: Range<usize>, has_output_on_line: bool) {
         let key = keys[key_id];
         let value = &input.input[(value_range.start - input.offset)..(value_range.end - input.offset)];
         writer.write_all(&b"(("[(has_output_on_line as usize)..]).unwrap();
@@ -80,7 +80,7 @@ impl Output for OutputLabeled {
         writer.write_all(&value[..]).unwrap();
         writer.write_all(&b")"[..]).unwrap();
     }
-    fn eol<WriteT: Write>(&mut self, writer: &mut WriteT, _input: &parser::Input) {
+    fn eol(&mut self, writer: &mut WriteT, _input: &parser::Input) {
         writer.write(&b")\n"[..]).unwrap();
     }
 }
@@ -99,8 +99,8 @@ impl OutputCsv {
     }
 }
 
-impl Output for OutputCsv {
-    fn bof<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, segment_index: parser::SegmentIndex) {
+impl<WriteT: Write> Output<WriteT> for OutputCsv {
+    fn bof(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, segment_index: parser::SegmentIndex) {
         self.row.resize(keys.len(), 0..0);
         match segment_index {
             parser::SegmentIndex::EntireFile | parser::SegmentIndex::Segment(0) => {
@@ -121,10 +121,10 @@ impl Output for OutputCsv {
             parser::SegmentIndex::Segment(_) => (),
         }
     }
-    fn select<WriteT: Write>(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>, key_id: usize, _input: &parser::Input, value_range: Range<usize>, _has_output_on_line: bool) {
+    fn select(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>, key_id: usize, _input: &parser::Input, value_range: Range<usize>, _has_output_on_line: bool) {
         self.row[key_id] = value_range;
     }
-    fn eol<WriteT: Write>(&mut self, writer: &mut WriteT, input: &parser::Input) {
+    fn eol(&mut self, writer: &mut WriteT, input: &parser::Input) {
         let mut needs_comma = false;
         for value_range in self.row.iter_mut() {
             if needs_comma {
@@ -252,13 +252,13 @@ impl ActionLut {
     }
 }
 
-impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
-    fn process_bof<WriteT: Write>(&mut self, writer: &mut WriteT, segment_index: parser::SegmentIndex) {
+impl<'a, WriteT: Write, OutputT: Output<WriteT>> parser::WritingStage2<WriteT> for Stage2<'a, OutputT> {
+    fn process_bof(&mut self, writer: &mut WriteT, segment_index: parser::SegmentIndex) {
         self.output.bof(writer, &self.select_vec, segment_index);
     }
 
     #[inline(always)]
-    fn process_one<WriteT: Write>(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, parser::Error> {
+    fn process_one(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, parser::Error> {
         let ch = input.input[this_index - input.offset];
         if unlikely(is_eof && ch == b'"') {
             // We have to attempt to unescape the last atom just to
@@ -335,7 +335,7 @@ impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
         Ok(input_index_to_keep)
     }
 
-    fn process_eof<WriteT: Write>(&mut self, _writer: &mut WriteT) -> Result<(), parser::Error> {
+    fn process_eof(&mut self, _writer: &mut WriteT) -> Result<(), parser::Error> {
         if self.stack_pointer > 0 {
             return Err(parser::Error::UnmatchedOpenParen);
         }

@@ -29,13 +29,13 @@ pub trait Stage2 {
     fn process_eof(&mut self) -> Result<Self::Return, Error>;
 }
 
-pub trait WritingStage2 {
-    fn process_bof<WriteT: Write>(&mut self, writer: &mut WriteT, segment_index: SegmentIndex);
+pub trait WritingStage2<WriteT> {
+    fn process_bof(&mut self, writer: &mut WriteT, segment_index: SegmentIndex);
 
     /// Returns the input index that must be preserved for next call.
-    fn process_one<WriteT: Write>(&mut self, writer: &mut WriteT, input: Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, Error>;
+    fn process_one(&mut self, writer: &mut WriteT, input: Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, Error>;
 
-    fn process_eof<WriteT: Write>(&mut self, writer: &mut WriteT) -> Result<(), Error>;
+    fn process_eof(&mut self, writer: &mut WriteT) -> Result<(), Error>;
 }
 
 /// Adapter for a WritingStage2 to become a Stage2
@@ -48,13 +48,13 @@ pub struct WritingStage2Adapter<'a, WritingStage2T, WriteT> {
     writer: &'a mut WriteT,
 }
 
-impl<'a, WriteT: Write, WritingStage2T: WritingStage2> WritingStage2Adapter<'a, WritingStage2T, WriteT> {
+impl<'a, WriteT: Write, WritingStage2T: WritingStage2<WriteT>> WritingStage2Adapter<'a, WritingStage2T, WriteT> {
     pub fn new(writing_stage2: WritingStage2T, writer: &'a mut WriteT) -> Self {
         Self { writing_stage2, writer }
     }
 }
 
-impl<'a, WriteT: Write, WritingStage2T: WritingStage2> Stage2 for WritingStage2Adapter<'a, WritingStage2T, WriteT> {
+impl<'a, WriteT: Write, WritingStage2T: WritingStage2<WriteT>> Stage2 for WritingStage2Adapter<'a, WritingStage2T, WriteT> {
     type Return = ();
     fn process_bof(&mut self, segment_index: SegmentIndex, _input_size_hint: Option<usize>) {
         self.writing_stage2.process_bof(self.writer, segment_index)
@@ -356,7 +356,7 @@ pub fn parser_from_visitor<'a, VisitorT: Visitor + 'a>(visitor: VisitorT) -> Box
     parser_new(VisitorState::new(visitor))
 }
 
-pub fn parser_from_writing_stage2<'a, WriteT: Write, WritingStage2T: WritingStage2 + 'a>
+pub fn parser_from_writing_stage2<'a, WriteT: Write, WritingStage2T: WritingStage2<WriteT> + 'a>
     (writing_stage2: WritingStage2T, writer: &'a mut WriteT)
      -> Box<dyn Parse<Return = ()> + 'a>
 {
@@ -390,7 +390,7 @@ pub fn streaming_from_visitor<'a, VisitorT: Visitor + 'a, BufReadT: BufRead>(vis
     streaming_new(VisitorState::new(visitor))
 }
 
-pub fn streaming_from_writing_stage2<'a, WriteT: Write, WritingStage2T: WritingStage2 + 'a, BufReadT: BufRead>
+pub fn streaming_from_writing_stage2<'a, WriteT: Write, WritingStage2T: WritingStage2<WriteT> + 'a, BufReadT: BufRead>
     (writing_stage2: WritingStage2T, writer: &'a mut WriteT)
      -> Box<dyn Stream<BufReadT, Return = ()> + 'a>
 {
