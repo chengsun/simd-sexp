@@ -9,11 +9,18 @@ use std::io::{BufRead, Write};
 use std::ops::Range;
 
 #[derive(Copy, Clone, Debug)]
-enum State {
+enum StateKind {
     Start,
-    SelectNext(u16),
-    Selected(u16, usize),
+    SelectNext,
+    Selected,
     Ignore,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct State {
+    kind: StateKind,
+    key_id: u16,
+    start_offset: usize,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -166,6 +173,7 @@ pub struct Stage2<'a, OutputT> {
     select_tree: BTreeMap<&'a [u8], u16>,
     select_vec: Vec<&'a [u8]>,
     unescape: escape::GenericUnescape,
+    action_lut: ActionLut,
 }
 
 impl<'a, OutputT> Stage2<'a, OutputT> {
@@ -177,13 +185,70 @@ impl<'a, OutputT> Stage2<'a, OutputT> {
         }
         Self {
             stack_pointer: 0,
-            stack: [State::Start; 64],
+            stack: [State { kind: StateKind::Start, key_id: 0, start_offset: 0 }; 64],
             has_output_on_line: false,
             output,
             select_tree,
             select_vec,
             unescape: escape::GenericUnescape::new(),
+            action_lut: ActionLut::new(),
         }
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+enum Action {
+    NoOp,
+    SetStart,
+    MaybeSetSelectNext,
+    SetSelected,
+    SetIgnore,
+    OutputAndSetStart,
+}
+
+struct ActionLut {
+    lut: Box<[Action; 256 * 4]>,
+}
+
+impl ActionLut {
+    fn new() -> Self {
+        let mut lut = Box::new([Action::NoOp; 256 * 4]);
+        for index in 0..(256 * 4) {
+            let (ch, state_kind) = Self::unindex(index);
+
+            lut[index] = match (ch, state_kind) {
+                (b')', StateKind::Selected) => Action::OutputAndSetStart,
+                (b')', _) => Action::SetStart,
+                (b' ' | b'\t' | b'\n', _) => Action::NoOp,
+                (_, StateKind::SelectNext) => Action::SetSelected,
+                (_, StateKind::Selected) => Action::SetIgnore,
+                (b'(', StateKind::Start) => Action::SetIgnore,
+                (_, StateKind::Start) => Action::MaybeSetSelectNext,
+                (_, StateKind::Ignore) => Action::NoOp,
+            }
+        };
+
+        Self { lut }
+    }
+    fn unindex(index: usize) -> (u8, StateKind) {
+        ((index % 256) as u8, match index >> 8 {
+            0 => StateKind::Start,
+            1 => StateKind::SelectNext,
+            2 => StateKind::Selected,
+            3 => StateKind::Ignore,
+            _ => panic!("unreachable"),
+        })
+    }
+    fn to_index(ch: u8, state_kind: StateKind) -> usize {
+        (ch as usize) | (match state_kind {
+            StateKind::Start => 0,
+            StateKind::SelectNext => 1,
+            StateKind::Selected => 2,
+            StateKind::Ignore => 3,
+        } << 8)
+    }
+    fn lookup(&self, ch: u8, state_kind: StateKind) -> Action {
+        self.lut[Self::to_index(ch, state_kind)]
     }
 }
 
@@ -195,63 +260,59 @@ impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
     #[inline(always)]
     fn process_one<WriteT: Write>(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, parser::Error> {
         let ch = input.input[this_index - input.offset];
-        match ch {
-            b')' => {
-                match self.stack[self.stack_pointer as usize] {
-                    State::Selected(key_id, start_offset) => {
-                        self.output.select(writer, &self.select_vec, key_id as usize, &input, start_offset..this_index, self.has_output_on_line);
-                        self.has_output_on_line = true;
-                    },
-                    _ => (),
-                }
-                self.stack[self.stack_pointer as usize] = State::Start;
+        if unlikely(is_eof && ch == b'"') {
+            // We have to attempt to unescape the last atom just to
+            // check validity.
+            // TODO: this implementation is super bad!
+            // TODO: the fact we have to do this here at all is fragile
+            // and bad!
+            let mut out: Vec<u8> = (this_index..next_index).map(|_| 0u8).collect();
+            let (_, _) =
+                escape::GenericUnescape::new()
+                .unescape(
+                    &input.input[(this_index + 1 - input.offset)..(next_index - input.offset)],
+                    &mut out[..])
+                .ok_or(parser::Error::BadQuotedAtom)?;
+        }
+        let state = &mut self.stack[self.stack_pointer as usize];
+        match self.action_lut.lookup(ch, state.kind) {
+            Action::NoOp => (),
+            Action::SetStart => {
+                state.kind = StateKind::Start;
+            }
+            Action::OutputAndSetStart => {
+                self.output.select(writer, &self.select_vec, state.key_id as usize, &input, state.start_offset..this_index, self.has_output_on_line);
+                self.has_output_on_line = true;
+                state.kind = StateKind::Start;
             },
-            b' ' | b'\t' | b'\n' => (),
-            _ => {
-                if is_eof && ch == b'"' {
-                    // We have to attempt to unescape the last atom just to
-                    // check validity.
-                    // TODO: this implementation is super bad!
-                    // TODO: the fact we have to do this here at all is fragile
-                    // and bad!
-                    let mut out: Vec<u8> = (this_index..next_index).map(|_| 0u8).collect();
-                    let (_, _) =
-                        escape::GenericUnescape::new()
-                        .unescape(
+            Action::SetSelected => {
+                self.stack[self.stack_pointer as usize].kind = StateKind::Selected;
+                self.stack[self.stack_pointer as usize].start_offset = this_index;
+            },
+            Action::SetIgnore => {
+                self.stack[self.stack_pointer as usize].kind = StateKind::Ignore;
+            },
+            Action::MaybeSetSelectNext => {
+                let key_id =
+                    if ch == b'"' {
+                        // TODO: there are a lot of early-outs we could be applying here.
+                        let mut buf: Vec<u8> = (0..(next_index - this_index)).map(|_| 0u8).collect();
+                        self.unescape.unescape(
                             &input.input[(this_index + 1 - input.offset)..(next_index - input.offset)],
-                            &mut out[..])
-                        .ok_or(parser::Error::BadQuotedAtom)?;
-                }
-                match self.stack[self.stack_pointer as usize] {
-                    State::SelectNext(key_id) => {
-                        self.stack[self.stack_pointer as usize] = State::Selected(key_id, this_index);
+                            &mut buf[..])
+                                     .and_then(|(_, output_len)| self.select_tree.get(&buf[..output_len]))
+                                     .map(|x| *x)
+                    } else {
+                        self.select_tree.get(&input.input[(this_index - input.offset)..(next_index - input.offset)]).map(|x| *x)
+                    };
+                match key_id {
+                    None => {
+                        self.stack[self.stack_pointer as usize].kind = StateKind::Ignore;
                     },
-                    State::Selected(_, _) => {
-                        self.stack[self.stack_pointer as usize] = State::Ignore;
+                    Some(key_id) => {
+                        self.stack[self.stack_pointer as usize].kind = StateKind::SelectNext;
+                        self.stack[self.stack_pointer as usize].key_id = key_id;
                     },
-                    State::Start => {
-                        if ch == b'(' {
-                            self.stack[self.stack_pointer as usize] = State::Ignore;
-                        } else {
-                            let key_id =
-                                if ch == b'"' {
-                                    // TODO: there are a lot of early-outs we could be applying here.
-                                    let mut buf: Vec<u8> = (0..(next_index - this_index)).map(|_| 0u8).collect();
-                                    self.unescape.unescape(
-                                        &input.input[(this_index + 1 - input.offset)..(next_index - input.offset)],
-                                        &mut buf[..])
-                                        .and_then(|(_, output_len)| self.select_tree.get(&buf[..output_len]))
-                                        .map(|x| *x)
-                                } else {
-                                    self.select_tree.get(&input.input[(this_index - input.offset)..(next_index - input.offset)]).map(|x| *x)
-                                };
-                            self.stack[self.stack_pointer as usize] = match key_id {
-                                None => State::Ignore,
-                                Some(key_id) => State::SelectNext(key_id),
-                            }
-                        }
-                    },
-                    _ => (),
                 }
             },
         }
