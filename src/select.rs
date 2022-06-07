@@ -175,7 +175,6 @@ pub struct Stage2<'a, OutputT> {
     stack_pointer: i32,
 
     stack: [State; 64],
-    input_index_to_keep: usize,
 
     // static
     output: OutputT,
@@ -194,7 +193,6 @@ impl<'a, OutputT> Stage2<'a, OutputT> {
         Self {
             stack_pointer: 0,
             stack: [State::Start; 64],
-            input_index_to_keep: 0,
             output,
             select_tree,
             select_vec,
@@ -271,7 +269,7 @@ impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
             },
         }
 
-        self.input_index_to_keep = if self.stack_pointer == 0 { next_index } else { self.input_index_to_keep };
+        let input_index_to_keep = if self.stack_pointer == 0 { next_index } else { input.offset };
 
         self.stack_pointer += (ch == b'(') as i32;
         self.stack_pointer -= (ch == b')') as i32;
@@ -285,7 +283,7 @@ impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
             self.output.eol(writer, &input);
         }
 
-        Ok(self.input_index_to_keep)
+        Ok(input_index_to_keep)
     }
 
     fn process_eof<WriteT: Write>(&mut self, _writer: &mut WriteT) -> Result<(), parser::Error> {
