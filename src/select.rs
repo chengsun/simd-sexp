@@ -161,7 +161,7 @@ impl<WriteT: Write> Output<WriteT> for OutputCsv {
     }
 }
 
-pub struct Stage2<'a, OutputT> {
+pub struct Stage2<'a, WriteT, OutputT> {
     // varying
     stack_pointer: i32,
 
@@ -173,10 +173,10 @@ pub struct Stage2<'a, OutputT> {
     select_tree: BTreeMap<&'a [u8], u16>,
     select_vec: Vec<&'a [u8]>,
     unescape: escape::GenericUnescape,
-    action_lut: ActionLut,
+    action_lut: ActionLut<'a, WriteT, OutputT>,
 }
 
-impl<'a, OutputT> Stage2<'a, OutputT> {
+impl<'a, WriteT: Write, OutputT: Output<WriteT>> Stage2<'a, WriteT, OutputT> {
     pub fn new<T: IntoIterator<Item = &'a [u8]>>(iter: T, output: OutputT) -> Self {
         let select_vec: Vec<&'a [u8]> = iter.into_iter().collect();
         let mut select_tree: BTreeMap<&'a [u8], u16> = BTreeMap::new();
@@ -196,36 +196,135 @@ impl<'a, OutputT> Stage2<'a, OutputT> {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-enum Action {
-    NoOp,
-    SetStart,
-    MaybeSetSelectNext,
-    SetSelected,
-    SetIgnore,
-    OutputAndSetStart,
+impl<'a, WriteT: Write, OutputT: Output<WriteT>> Stage2<'a, WriteT, OutputT> {
+    fn process_close_prologue(&mut self, writer: &mut WriteT, input: parser::Input) -> Result<(), parser::Error> {
+        self.stack_pointer -= 1;
+        if unlikely(self.stack_pointer < 0) {
+            return Err(parser::Error::UnmatchedCloseParen);
+        }
+        if self.stack_pointer == 0 && self.has_output_on_line {
+            self.output.eol(writer, &input);
+            self.has_output_on_line = false;
+        }
+        Ok(())
+    }
+    fn process_no_op(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize) -> Result<(), parser::Error> {
+        Ok(())
+    }
+    fn process_close_and_set_start(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize) -> Result<(), parser::Error> {
+        let state = &mut self.stack[self.stack_pointer as usize];
+        state.kind = StateKind::Start;
+        self.process_close_prologue(writer, input)?;
+        Ok(())
+    }
+    fn process_close_and_output_and_set_start(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize) -> Result<(), parser::Error> {
+        let state = &mut self.stack[self.stack_pointer as usize];
+        self.output.select(writer, &self.select_vec, state.key_id as usize, &input, state.start_offset..this_index, self.has_output_on_line);
+        self.has_output_on_line = true;
+        state.kind = StateKind::Start;
+        self.process_close_prologue(writer, input)?;
+        Ok(())
+    }
+    fn process_set_selected(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize) -> Result<(), parser::Error> {
+        let state = &mut self.stack[self.stack_pointer as usize];
+        state.kind = StateKind::Selected;
+        state.start_offset = this_index;
+        Ok(())
+    }
+    fn process_set_ignore(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize) -> Result<(), parser::Error> {
+        let state = &mut self.stack[self.stack_pointer as usize];
+        state.kind = StateKind::Ignore;
+        Ok(())
+    }
+    fn process_maybe_set_select_next(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize) -> Result<(), parser::Error> {
+        let ch = input.input[this_index - input.offset];
+        let key_id = self.select_tree.get(&input.input[(this_index - input.offset)..(next_index - input.offset)]).map(|x| *x);
+        match key_id {
+            None => {
+                self.stack[self.stack_pointer as usize].kind = StateKind::Ignore;
+            },
+            Some(key_id) => {
+                self.stack[self.stack_pointer as usize].kind = StateKind::SelectNext;
+                self.stack[self.stack_pointer as usize].key_id = key_id;
+            },
+        }
+        Ok(())
+    }
+    fn process_quoted_maybe_set_select_next(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize) -> Result<(), parser::Error> {
+        let ch = input.input[this_index - input.offset];
+        let key_id = {
+            // TODO: there are a lot of early-outs we could be applying here.
+            let mut buf: Vec<u8> = (0..(next_index - this_index)).map(|_| 0u8).collect();
+            self.unescape.unescape(
+                &input.input[(this_index + 1 - input.offset)..(next_index - input.offset)],
+                &mut buf[..])
+                         .and_then(|(_, output_len)| self.select_tree.get(&buf[..output_len]))
+                         .map(|x| *x)
+        };
+        match key_id {
+            None => {
+                self.stack[self.stack_pointer as usize].kind = StateKind::Ignore;
+            },
+            Some(key_id) => {
+                self.stack[self.stack_pointer as usize].kind = StateKind::SelectNext;
+                self.stack[self.stack_pointer as usize].key_id = key_id;
+            },
+        }
+        Ok(())
+    }
+    fn process_open_and_set_ignore(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize) -> Result<(), parser::Error> {
+        let state = &mut self.stack[self.stack_pointer as usize];
+        state.kind = StateKind::Ignore;
+
+        self.stack_pointer += 1;
+        assert!((self.stack_pointer as usize) < self.stack.len(), "Too deeply nested");
+        Ok(())
+    }
+    fn process_open_and_set_selected(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize) -> Result<(), parser::Error> {
+        let state = &mut self.stack[self.stack_pointer as usize];
+        state.kind = StateKind::Selected;
+        state.start_offset = this_index;
+
+        self.stack_pointer += 1;
+        assert!((self.stack_pointer as usize) < self.stack.len(), "Too deeply nested");
+        Ok(())
+    }
+    fn process_open(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize) -> Result<(), parser::Error> {
+        let state = &mut self.stack[self.stack_pointer as usize];
+        state.kind = StateKind::Ignore;
+
+        self.stack_pointer += 1;
+        assert!((self.stack_pointer as usize) < self.stack.len(), "Too deeply nested");
+        Ok(())
+    }
 }
 
-struct ActionLut {
-    lut: Box<[Action; 256 * 4]>,
+type Action<'a, WriteT, OutputT> = fn(&mut Stage2<'a, WriteT, OutputT>, &mut WriteT, parser::Input, usize, usize) -> Result<(), parser::Error>;
+
+struct ActionLut<'a, WriteT, OutputT> {
+    lut: Vec<Action<'a, WriteT, OutputT>>,
 }
 
-impl ActionLut {
+impl<'a, WriteT: Write, OutputT: Output<WriteT>> ActionLut<'a, WriteT, OutputT> {
     fn new() -> Self {
-        let mut lut = Box::new([Action::NoOp; 256 * 4]);
+        let mut lut = Vec::new();
         for index in 0..(256 * 4) {
             let (ch, state_kind) = Self::unindex(index);
 
-            lut[index] = match (ch, state_kind) {
-                (b')', StateKind::Selected) => Action::OutputAndSetStart,
-                (b')', _) => Action::SetStart,
-                (b' ' | b'\t' | b'\n', _) => Action::NoOp,
-                (_, StateKind::SelectNext) => Action::SetSelected,
-                (_, StateKind::Selected) => Action::SetIgnore,
-                (b'(', StateKind::Start) => Action::SetIgnore,
-                (_, StateKind::Start) => Action::MaybeSetSelectNext,
-                (_, StateKind::Ignore) => Action::NoOp,
-            }
+            lut.push(match (ch, state_kind) {
+                (b')', StateKind::Selected) => Stage2::process_close_and_output_and_set_start,
+                (b')', _) => Stage2::process_close_and_set_start,
+                (b' ' | b'\t' | b'\n', _) => Stage2::process_no_op,
+                (b'(', StateKind::Start) => Stage2::process_open_and_set_ignore,
+                (b'(', StateKind::SelectNext) => Stage2::process_open_and_set_selected,
+                (b'(', StateKind::Selected) => Stage2::process_open_and_set_ignore,
+                (b'(', StateKind::Ignore) => Stage2::process_open,
+                (b'"', StateKind::Start) => Stage2::process_quoted_maybe_set_select_next,
+                (_, StateKind::SelectNext) => Stage2::process_set_selected,
+                (_, StateKind::Selected) => Stage2::process_set_ignore,
+                (_, StateKind::Start) => Stage2::process_maybe_set_select_next,
+                (_, StateKind::Ignore) => Stage2::process_no_op,
+            })
         };
 
         Self { lut }
@@ -247,12 +346,12 @@ impl ActionLut {
             StateKind::Ignore => 3,
         } << 8)
     }
-    fn lookup(&self, ch: u8, state_kind: StateKind) -> Action {
+    fn lookup(&self, ch: u8, state_kind: StateKind) -> Action<'a, WriteT, OutputT> {
         self.lut[Self::to_index(ch, state_kind)]
     }
 }
 
-impl<'a, WriteT: Write, OutputT: Output<WriteT>> parser::WritingStage2<WriteT> for Stage2<'a, OutputT> {
+impl<'a, WriteT: Write, OutputT: Output<WriteT>> parser::WritingStage2<WriteT> for Stage2<'a, WriteT, OutputT> {
     fn process_bof(&mut self, writer: &mut WriteT, segment_index: parser::SegmentIndex) {
         self.output.bof(writer, &self.select_vec, segment_index);
     }
@@ -274,63 +373,11 @@ impl<'a, WriteT: Write, OutputT: Output<WriteT>> parser::WritingStage2<WriteT> f
                     &mut out[..])
                 .ok_or(parser::Error::BadQuotedAtom)?;
         }
-        let state = &mut self.stack[self.stack_pointer as usize];
-        match self.action_lut.lookup(ch, state.kind) {
-            Action::NoOp => (),
-            Action::SetStart => {
-                state.kind = StateKind::Start;
-            }
-            Action::OutputAndSetStart => {
-                self.output.select(writer, &self.select_vec, state.key_id as usize, &input, state.start_offset..this_index, self.has_output_on_line);
-                self.has_output_on_line = true;
-                state.kind = StateKind::Start;
-            },
-            Action::SetSelected => {
-                self.stack[self.stack_pointer as usize].kind = StateKind::Selected;
-                self.stack[self.stack_pointer as usize].start_offset = this_index;
-            },
-            Action::SetIgnore => {
-                self.stack[self.stack_pointer as usize].kind = StateKind::Ignore;
-            },
-            Action::MaybeSetSelectNext => {
-                let key_id =
-                    if ch == b'"' {
-                        // TODO: there are a lot of early-outs we could be applying here.
-                        let mut buf: Vec<u8> = (0..(next_index - this_index)).map(|_| 0u8).collect();
-                        self.unescape.unescape(
-                            &input.input[(this_index + 1 - input.offset)..(next_index - input.offset)],
-                            &mut buf[..])
-                                     .and_then(|(_, output_len)| self.select_tree.get(&buf[..output_len]))
-                                     .map(|x| *x)
-                    } else {
-                        self.select_tree.get(&input.input[(this_index - input.offset)..(next_index - input.offset)]).map(|x| *x)
-                    };
-                match key_id {
-                    None => {
-                        self.stack[self.stack_pointer as usize].kind = StateKind::Ignore;
-                    },
-                    Some(key_id) => {
-                        self.stack[self.stack_pointer as usize].kind = StateKind::SelectNext;
-                        self.stack[self.stack_pointer as usize].key_id = key_id;
-                    },
-                }
-            },
-        }
 
         let input_index_to_keep = if self.stack_pointer == 0 { next_index } else { input.offset };
 
-        self.stack_pointer += (ch == b'(') as i32;
-        self.stack_pointer -= (ch == b')') as i32;
-
-        if unlikely(self.stack_pointer < 0) {
-            return Err(parser::Error::UnmatchedCloseParen);
-        }
-        assert!((self.stack_pointer as usize) < self.stack.len(), "Too deeply nested");
-
-        if self.stack_pointer == 0 && self.has_output_on_line {
-            self.output.eol(writer, &input);
-            self.has_output_on_line = false;
-        }
+        let state = &mut self.stack[self.stack_pointer as usize];
+        (self.action_lut.lookup(ch, state.kind))(self, writer, input, this_index, next_index)?;
 
         Ok(input_index_to_keep)
     }
