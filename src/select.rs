@@ -236,22 +236,24 @@ impl<'a, WriteT: Write, OutputT: Output<WriteT>> Stage2<'a, WriteT, OutputT> {
         state.kind = StateKind::Ignore;
         Ok(())
     }
-    fn process_maybe_set_select_next(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize) -> Result<(), parser::Error> {
-        let ch = input.input[this_index - input.offset];
-        let key_id = self.select_tree.get(&input.input[(this_index - input.offset)..(next_index - input.offset)]).map(|x| *x);
+    fn _process_maybe_set_select_next(&mut self, key_id: Option<u16>) {
+        let state = &mut self.stack[self.stack_pointer as usize];
         match key_id {
             None => {
-                self.stack[self.stack_pointer as usize].kind = StateKind::Ignore;
+                state.kind = StateKind::Ignore;
             },
             Some(key_id) => {
-                self.stack[self.stack_pointer as usize].kind = StateKind::SelectNext;
-                self.stack[self.stack_pointer as usize].key_id = key_id;
+                state.kind = StateKind::SelectNext;
+                state.key_id = key_id;
             },
         }
+    }
+    fn process_unquoted_maybe_set_select_next(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize) -> Result<(), parser::Error> {
+        let key_id = self.select_tree.get(&input.input[(this_index - input.offset)..(next_index - input.offset)]).map(|x| *x);
+        self._process_maybe_set_select_next(key_id);
         Ok(())
     }
     fn process_quoted_maybe_set_select_next(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize) -> Result<(), parser::Error> {
-        let ch = input.input[this_index - input.offset];
         let key_id = {
             // TODO: there are a lot of early-outs we could be applying here.
             let mut buf: Vec<u8> = (0..(next_index - this_index)).map(|_| 0u8).collect();
@@ -261,15 +263,7 @@ impl<'a, WriteT: Write, OutputT: Output<WriteT>> Stage2<'a, WriteT, OutputT> {
                          .and_then(|(_, output_len)| self.select_tree.get(&buf[..output_len]))
                          .map(|x| *x)
         };
-        match key_id {
-            None => {
-                self.stack[self.stack_pointer as usize].kind = StateKind::Ignore;
-            },
-            Some(key_id) => {
-                self.stack[self.stack_pointer as usize].kind = StateKind::SelectNext;
-                self.stack[self.stack_pointer as usize].key_id = key_id;
-            },
-        }
+        self._process_maybe_set_select_next(key_id);
         Ok(())
     }
     fn process_open_and_set_ignore(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize) -> Result<(), parser::Error> {
@@ -322,7 +316,7 @@ impl<'a, WriteT: Write, OutputT: Output<WriteT>> ActionLut<'a, WriteT, OutputT> 
                 (b'"', StateKind::Start) => Stage2::process_quoted_maybe_set_select_next,
                 (_, StateKind::SelectNext) => Stage2::process_set_selected,
                 (_, StateKind::Selected) => Stage2::process_set_ignore,
-                (_, StateKind::Start) => Stage2::process_maybe_set_select_next,
+                (_, StateKind::Start) => Stage2::process_unquoted_maybe_set_select_next,
                 (_, StateKind::Ignore) => Stage2::process_no_op,
             })
         };
