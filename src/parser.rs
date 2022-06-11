@@ -148,7 +148,7 @@ impl<VisitorT: Visitor> Stage2 for VisitorState<VisitorT> {
 }
 
 /// Must be >= 64. Doesn't affect correctness or impose limitations on sexp being parsed.
-const INDICES_BUFFER_MAX_LEN: usize = 512;
+const INDICES_BUFFER_MAX_LEN: usize = 8092;
 
 pub struct State<ClassifierT, Stage2T> {
     stage2: Stage2T,
@@ -185,7 +185,7 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
     pub fn process_streaming<BufReadT: BufRead>(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Stage2T::Return, Error> {
         let mut input_index = 0;
         let mut indices_len = 0;
-        let mut indices_buffer = [0; INDICES_BUFFER_MAX_LEN];
+        let mut indices_buffer = Box::new([0; INDICES_BUFFER_MAX_LEN]);
 
         let mut input_start_index = 0;
         let mut input;
