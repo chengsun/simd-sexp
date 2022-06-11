@@ -11,8 +11,8 @@ use std::ops::Range;
 #[derive(Copy, Clone, Debug)]
 enum State {
     Start,
-    SelectNext(u16),
-    Selected(u16, usize),
+    SelectNext(u32),
+    Selected(u32, usize),
     Ignore,
 }
 
@@ -163,7 +163,7 @@ pub struct Stage2<'a, OutputT> {
 
     // static
     output: OutputT,
-    select_tree: BTreeMap<&'a [u8], u16>,
+    select_tree: BTreeMap<&'a [u8], u32>,
     select_vec: Vec<&'a [u8]>,
     unescape: escape::GenericUnescape,
 }
@@ -171,7 +171,7 @@ pub struct Stage2<'a, OutputT> {
 impl<'a, OutputT> Stage2<'a, OutputT> {
     pub fn new<T: IntoIterator<Item = &'a [u8]>>(iter: T, output: OutputT) -> Self {
         let select_vec: Vec<&'a [u8]> = iter.into_iter().collect();
-        let mut select_tree: BTreeMap<&'a [u8], u16> = BTreeMap::new();
+        let mut select_tree: BTreeMap<&'a [u8], u32> = BTreeMap::new();
         for (key_id, key) in select_vec.iter().enumerate() {
             select_tree.insert(key, key_id.try_into().unwrap());
         }
