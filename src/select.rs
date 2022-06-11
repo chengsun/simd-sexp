@@ -189,6 +189,7 @@ impl<'a, OutputT> Stage2<'a, OutputT> {
 
 impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
     fn process_bof<WriteT: Write>(&mut self, writer: &mut WriteT, segment_index: parser::SegmentIndex) {
+        self.stack[0] = State::Ignore;
         self.output.bof(writer, &self.select_vec, segment_index);
     }
 
@@ -576,6 +577,18 @@ bar baz
             input,
             keys,
             Err(parser::Error::BadQuotedAtom));
+    }
+
+    #[test]
+    fn test_10() {
+        let input = b"foo bar";
+        let keys = &[&b"foo"[..]];
+        run_test(
+            OutputKind::Csv { atoms_as_sexps: false },
+            input,
+            keys,
+            Ok(br#"foo
+"#));
     }
 
     #[test]
