@@ -195,7 +195,26 @@ impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
     #[inline(always)]
     fn process_one<WriteT: Write>(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, parser::Error> {
         let ch = input.input[this_index - input.offset];
+
+        let input_index_to_keep = if self.stack_pointer == 0 { next_index } else { input.offset };
+
         match ch {
+            b'(' => {
+                match self.stack[self.stack_pointer as usize] {
+                    State::SelectNext(key_id) => {
+                        self.stack[self.stack_pointer as usize] = State::Selected(key_id, this_index);
+                    },
+                    State::Selected(_, _) => {
+                        self.stack[self.stack_pointer as usize] = State::Ignore;
+                    },
+                    State::Start => {
+                        self.stack[self.stack_pointer as usize] = State::Ignore;
+                    },
+                    _ => (),
+                }
+                self.stack_pointer += 1;
+                assert!((self.stack_pointer as usize) < self.stack.len(), "Too deeply nested");
+            }
             b')' => {
                 match self.stack[self.stack_pointer as usize] {
                     State::Selected(key_id, start_offset) => {
@@ -205,6 +224,15 @@ impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
                     _ => (),
                 }
                 self.stack[self.stack_pointer as usize] = State::Start;
+                self.stack_pointer -= 1;
+                if unlikely(self.stack_pointer < 0) {
+                    return Err(parser::Error::UnmatchedCloseParen);
+                }
+
+                if self.stack_pointer == 0 && self.has_output_on_line {
+                    self.output.eol(writer, &input);
+                    self.has_output_on_line = false;
+                }
             },
             b' ' | b'\t' | b'\n' => (),
             _ => {
@@ -230,45 +258,26 @@ impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
                         self.stack[self.stack_pointer as usize] = State::Ignore;
                     },
                     State::Start => {
-                        if ch == b'(' {
-                            self.stack[self.stack_pointer as usize] = State::Ignore;
-                        } else {
-                            let key_id =
-                                if ch == b'"' {
-                                    // TODO: there are a lot of early-outs we could be applying here.
-                                    let mut buf: Vec<u8> = (0..(next_index - this_index)).map(|_| 0u8).collect();
-                                    self.unescape.unescape(
-                                        &input.input[(this_index + 1 - input.offset)..(next_index - input.offset)],
-                                        &mut buf[..])
-                                        .and_then(|(_, output_len)| self.select_tree.get(&buf[..output_len]))
-                                        .map(|x| *x)
-                                } else {
-                                    self.select_tree.get(&input.input[(this_index - input.offset)..(next_index - input.offset)]).map(|x| *x)
-                                };
-                            self.stack[self.stack_pointer as usize] = match key_id {
-                                None => State::Ignore,
-                                Some(key_id) => State::SelectNext(key_id),
-                            }
+                        let key_id =
+                            if ch == b'"' {
+                                // TODO: there are a lot of early-outs we could be applying here.
+                                let mut buf: Vec<u8> = (0..(next_index - this_index)).map(|_| 0u8).collect();
+                                self.unescape.unescape(
+                                    &input.input[(this_index + 1 - input.offset)..(next_index - input.offset)],
+                                    &mut buf[..])
+                                    .and_then(|(_, output_len)| self.select_tree.get(&buf[..output_len]))
+                                    .map(|x| *x)
+                            } else {
+                                self.select_tree.get(&input.input[(this_index - input.offset)..(next_index - input.offset)]).map(|x| *x)
+                            };
+                        self.stack[self.stack_pointer as usize] = match key_id {
+                            None => State::Ignore,
+                            Some(key_id) => State::SelectNext(key_id),
                         }
                     },
                     _ => (),
                 }
             },
-        }
-
-        let input_index_to_keep = if self.stack_pointer == 0 { next_index } else { input.offset };
-
-        self.stack_pointer += (ch == b'(') as i32;
-        self.stack_pointer -= (ch == b')') as i32;
-
-        if unlikely(self.stack_pointer < 0) {
-            return Err(parser::Error::UnmatchedCloseParen);
-        }
-        assert!((self.stack_pointer as usize) < self.stack.len(), "Too deeply nested");
-
-        if self.stack_pointer == 0 && self.has_output_on_line {
-            self.output.eol(writer, &input);
-            self.has_output_on_line = false;
         }
 
         Ok(input_index_to_keep)
