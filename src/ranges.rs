@@ -1,4 +1,4 @@
-#[inline(always)]
+#[inline]
 pub fn range_starts_single(bm: u64) -> u64 {
   bm & !(bm << 1)
 }
@@ -6,7 +6,7 @@ pub fn range_starts_single(bm: u64) -> u64 {
 /** input:  xxx xxx|x   x
     output: x   x  |    x
  */
-#[inline(always)]
+#[inline]
 pub fn range_starts(bm: u64, prev: bool) -> u64 {
   return bm & !(bm << 1 | prev as u64);
 }
@@ -14,7 +14,7 @@ pub fn range_starts(bm: u64, prev: bool) -> u64 {
 /** input:  xxx xxx|x   x
     output: x  xx  | x  x
  */
-#[inline(always)]
+#[inline]
 pub fn range_transitions(bm: u64, prev: bool) -> u64 {
     return range_starts(bm, prev) | range_starts(!bm, !prev);
 }
@@ -22,7 +22,7 @@ pub fn range_transitions(bm: u64, prev: bool) -> u64 {
 /** input:  xxx xxx|x   x
     output:  xx  xx|x
  */
-#[inline(always)]
+#[inline]
 pub fn range_tails(bm: u64, prev_bm: u64) -> u64 {
     return bm & (bm << 1 | prev_bm >> 63);
 }
@@ -32,7 +32,7 @@ pub fn range_tails(bm: u64, prev_bm: u64) -> u64 {
 
     the end is *exclusive*, i.e. one-past-the end character-wise.
  */
-#[inline(always)]
+#[inline]
 pub fn odd_range_ends(bm: u64, prev_overflow: bool) -> (u64, bool) {
   const BM_EVEN: u64 = 0xAAAAAAAAAAAAAAAA;
   const BM_ODD:  u64 = 0x5555555555555555;

@@ -85,7 +85,7 @@ mod aarch64 {
     }
 
     impl Clmul for Neon {
-        #[inline(always)]
+        #[inline]
         fn clmul(&self, input: u64) -> u64 {
             let () = self._feature_detected_witness;
             unsafe { self._clmul(input) }

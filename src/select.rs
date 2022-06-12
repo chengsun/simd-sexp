@@ -189,7 +189,7 @@ impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
         self.output.bof(writer, &self.select_vec, segment_index);
     }
 
-    #[inline(always)]
+    #[inline]
     fn process_one<WriteT: Write>(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, parser::Error> {
         let ch = input.input[this_index - input.offset];
 

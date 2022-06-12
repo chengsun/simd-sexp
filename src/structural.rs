@@ -31,7 +31,7 @@ impl Generic {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn structural_indices_bitmask_one(&mut self, input_buf: &[u8]) -> (u64, usize) {
         let chunk_len = std::cmp::min(64, input_buf.len());
         let mut result = 0u64;
@@ -61,7 +61,7 @@ impl Generic {
 impl Classifier for Generic {
     const NAME: &'static str = "Generic";
 
-    #[inline(always)]
+    #[inline]
     fn structural_indices_bitmask<F: FnMut(u64, usize) -> CallbackResult>(&mut self, input_buf: &[u8], mut f: F) {
         for chunk in input_buf.chunks(64) {
             let (result, chunk_len) = self.structural_indices_bitmask_one(chunk);
@@ -386,7 +386,7 @@ mod aarch64 {
     impl Classifier for Neon {
         const NAME: &'static str = "NEON";
 
-        #[inline(always)]
+        #[inline]
         fn structural_indices_bitmask<F: FnMut(u64, usize) -> CallbackResult>(&mut self, input_buf: &[u8], mut f: F) {
             let (prefix, aligned, suffix) = unsafe { input_buf.align_to::<uint8x16x4_t>() };
             if utils::unlikely(prefix.len() > 0) {

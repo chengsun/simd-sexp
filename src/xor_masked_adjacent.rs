@@ -10,7 +10,7 @@ impl Generic {
 }
 
 impl XorMaskedAdjacent for Generic {
-    #[inline(always)]
+    #[inline]
     fn xor_masked_adjacent(&self, bitstring: u64, mask: u64, lo_fill: bool) -> u64 {
         let bitstring = bitstring & mask;
         let i1 = mask.wrapping_sub(bitstring << 1);

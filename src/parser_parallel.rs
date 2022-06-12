@@ -45,7 +45,7 @@ impl<WritingStage2T: parser::WritingStage2> WritingStage2Adapter<WritingStage2T>
 
 impl<WritingStage2T: parser::WritingStage2> parser::Stage2 for WritingStage2Adapter<WritingStage2T> {
     type Return = Vec<u8>;
-    #[inline(always)]
+    #[inline]
     fn process_bof(&mut self, segment_index: parser::SegmentIndex, input_size_hint: Option<usize>) {
         self.buffer.clear();
         input_size_hint.map(|input_size_hint| { self.buffer.reserve(input_size_hint) });
@@ -55,7 +55,7 @@ impl<WritingStage2T: parser::WritingStage2> parser::Stage2 for WritingStage2Adap
     fn process_one(&mut self, input: parser::Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, parser::Error> {
         self.writing_stage2.process_one(&mut self.buffer, input, this_index, next_index, is_eof)
     }
-    #[inline(always)]
+    #[inline]
     fn process_eof(&mut self) -> Result<Self::Return, parser::Error> {
         let () = self.writing_stage2.process_eof(&mut self.buffer)?;
         Ok(std::mem::take(&mut self.buffer))

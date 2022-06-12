@@ -94,7 +94,7 @@ impl<VisitorT: Visitor> Stage2 for VisitorState<VisitorT> {
         self.visitor.bof(input_size_hint);
     }
 
-    #[inline(always)]
+    #[inline]
     fn process_one(&mut self, input: Input, this_index: usize, next_index: usize, _is_eof: bool) -> Result<usize, Error> {
         match input.input[this_index - input.offset] {
             b'(' => {
