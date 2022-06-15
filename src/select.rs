@@ -323,6 +323,9 @@ pub fn make_parser<'a, KeysT: IntoIterator<Item = &'a [u8]>, ReadT: BufRead + Se
         };
     }
 
+    #[cfg(not(feature = "threads"))]
+    let _ = threads;
+
     match output_kind {
         OutputKind::Values =>
             parser::streaming_from_writing_stage2(Stage2::new(keys, OutputValues::new()), stdout),
