@@ -104,13 +104,6 @@ mod x86 {
         atom_like: bool,
     }
 
-    struct ClassifyOneAvx2 {
-        parens: __m256i,
-        quote: __m256i,
-        backslash: __m256i,
-        atom_like: __m256i,
-    }
-
     impl Avx2 {
         pub fn new() -> Option<Self> {
             let clmul = clmul::Sse2Pclmulqdq::new()?;
@@ -152,43 +145,47 @@ mod x86 {
 
         #[target_feature(enable = "avx2,bmi2,sse2,ssse3,pclmulqdq")]
         #[inline]
-        unsafe fn classify_one_avx2(&self, input: __m256i) -> ClassifyOneAvx2
-        {
-            let parens = _mm256_cmpgt_epi8(_mm256_set1_epi8(i8::MIN + 2), _mm256_sub_epi8(input, _mm256_set1_epi8(b'(' as i8 + i8::MIN)));
-            let quote = _mm256_cmpeq_epi8(input, _mm256_set1_epi8(b'"' as i8));
-            let backslash = _mm256_cmpeq_epi8(input, _mm256_set1_epi8(b'\\' as i8));
+        unsafe fn classify_parens_avx2(&self, input: __m256i) -> __m256i {
+            _mm256_cmpgt_epi8(_mm256_set1_epi8(i8::MIN + 2), _mm256_sub_epi8(input, _mm256_set1_epi8(b'(' as i8 + i8::MIN)))
+        }
 
-            let mut atom_like = input.clone();
-            self.atom_terminator_classifier.classify_avx2(std::slice::from_mut(&mut atom_like));
-            let atom_like = _mm256_cmpeq_epi8(atom_like, _mm256_set1_epi8(0));
+        #[target_feature(enable = "avx2,bmi2,sse2,ssse3,pclmulqdq")]
+        #[inline]
+        unsafe fn classify_quote_avx2(&self, input: __m256i) -> __m256i {
+            _mm256_cmpeq_epi8(input, _mm256_set1_epi8(b'"' as i8))
+        }
 
-            ClassifyOneAvx2 {
-                parens,
-                quote,
-                backslash,
-                atom_like,
-            }
+        #[target_feature(enable = "avx2,bmi2,sse2,ssse3,pclmulqdq")]
+        #[inline]
+        unsafe fn classify_backslash_avx2(&self, input: __m256i) -> __m256i {
+            _mm256_cmpeq_epi8(input, _mm256_set1_epi8(b'\\' as i8))
+        }
+
+        #[target_feature(enable = "avx2,bmi2,sse2,ssse3,pclmulqdq")]
+        #[inline]
+        unsafe fn classify_atom_like_avx2(&self, mut input: __m256i) -> __m256i {
+            self.atom_terminator_classifier.classify_avx2(std::slice::from_mut(&mut input));
+            _mm256_cmpeq_epi8(input, _mm256_set1_epi8(0))
         }
 
         #[target_feature(enable = "avx2,bmi2,sse2,ssse3,pclmulqdq")]
         #[inline]
         unsafe fn structural_indices_bitmask_one_avx2(&mut self, input_lo: __m256i, input_hi: __m256i) -> u64 {
-            let classify_lo = self.classify_one_avx2(input_lo);
-            let parens_lo = classify_lo.parens;
-            let quote_lo = classify_lo.quote;
-            let backslash_lo = classify_lo.backslash;
-            let atom_like_lo = classify_lo.atom_like;
+            let parens_lo = self.classify_parens_avx2(input_lo);
+            let quote_lo = self.classify_quote_avx2(input_lo);
+            let backslash_lo = self.classify_backslash_avx2(input_lo);
+            let atom_like_lo = self.classify_atom_like_avx2(input_lo);
 
-            let classify_hi = self.classify_one_avx2(input_hi);
-            let parens_hi = classify_hi.parens;
-            let quote_hi = classify_hi.quote;
-            let backslash_hi = classify_hi.backslash;
-            let atom_like_hi = classify_hi.atom_like;
+            let parens_hi = self.classify_parens_avx2(input_hi);
+            let quote_hi = self.classify_quote_avx2(input_hi);
+            let backslash_hi = self.classify_backslash_avx2(input_hi);
+            let atom_like_hi = self.classify_atom_like_avx2(input_hi);
 
             let bm_parens = utils::make_bitmask(parens_lo, parens_hi);
             let bm_quote = utils::make_bitmask(quote_lo, quote_hi);
             let bm_backslash = utils::make_bitmask(backslash_lo, backslash_hi);
             let bm_atom_like = utils::make_bitmask(atom_like_lo, atom_like_hi);
+
             let (escaped, escape_state) = ranges::odd_range_ends(bm_backslash, self.escape);
             self.escape = escape_state;
 
