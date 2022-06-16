@@ -154,7 +154,7 @@ mod x86 {
         #[inline]
         unsafe fn classify_one_avx2(&self, input: __m256i) -> ClassifyOneAvx2
         {
-            let parens = _mm256_cmpgt_epi8(_mm256_set1_epi8(2), _mm256_sub_epi8(input, _mm256_set1_epi8(b'(' as i8)));
+            let parens = _mm256_cmpgt_epi8(_mm256_set1_epi8(i8::MIN + 2), _mm256_sub_epi8(input, _mm256_set1_epi8(b'(' as i8 + i8::MIN)));
             let quote = _mm256_cmpeq_epi8(input, _mm256_set1_epi8(b'"' as i8));
             let backslash = _mm256_cmpeq_epi8(input, _mm256_set1_epi8(b'\\' as i8));
 
