@@ -154,12 +154,9 @@ mod x86 {
         #[inline]
         unsafe fn classify_one_avx2(&self, input: __m256i) -> ClassifyOneAvx2
         {
-            let lparen = _mm256_cmpeq_epi8(input, _mm256_set1_epi8(b'(' as i8));
-            let rparen = _mm256_cmpeq_epi8(input, _mm256_set1_epi8(b')' as i8));
+            let parens = _mm256_cmpgt_epi8(_mm256_set1_epi8(2), _mm256_sub_epi8(input, _mm256_set1_epi8(b'(' as i8)));
             let quote = _mm256_cmpeq_epi8(input, _mm256_set1_epi8(b'"' as i8));
             let backslash = _mm256_cmpeq_epi8(input, _mm256_set1_epi8(b'\\' as i8));
-
-            let parens = _mm256_or_si256(lparen, rparen);
 
             let mut atom_like = input.clone();
             self.atom_terminator_classifier.classify_avx2(std::slice::from_mut(&mut atom_like));
@@ -331,12 +328,9 @@ mod aarch64 {
         unsafe fn classify_one_neon(&self, input: uint8x16_t) -> ClassifyOneNeon {
             use vector_classifier::Classifier;
 
-            let lparen = vceqq_u8(input, vdupq_n_u8(b'('));
-            let rparen = vceqq_u8(input, vdupq_n_u8(b')'));
+            let parens = vcltq_u8(vsubq_u8(input, vdupq_n_u8(b'(')), vdupq_n_u8(2));
             let quote = vceqq_u8(input, vdupq_n_u8(b'"'));
             let backslash = vceqq_u8(input, vdupq_n_u8(b'\\'));
-
-            let parens = vorrq_u8(lparen, rparen);
 
             let mut atom_like = input.clone();
             self.atom_terminator_classifier.classify_neon(std::slice::from_mut(&mut atom_like));
