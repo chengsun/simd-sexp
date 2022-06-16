@@ -274,13 +274,6 @@ mod aarch64 {
         atom_like: bool,
     }
 
-    struct ClassifyOneNeon {
-        parens: uint8x16_t,
-        quote: uint8x16_t,
-        backslash: uint8x16_t,
-        atom_like: uint8x16_t,
-    }
-
     impl Neon {
         pub fn new() -> Option<Self> {
             let clmul = clmul::Neon::new()?;
@@ -322,38 +315,55 @@ mod aarch64 {
 
         #[target_feature(enable = "neon,aes")]
         #[inline]
-        unsafe fn classify_one_neon(&self, input: uint8x16_t) -> ClassifyOneNeon {
-            use vector_classifier::Classifier;
+        unsafe fn classify_parens_neon(&self, input: uint8x16_t) -> uint8x16_t {
+            vcltq_u8(vsubq_u8(input, vdupq_n_u8(b'(')), vdupq_n_u8(2))
+        }
 
-            let parens = vcltq_u8(vsubq_u8(input, vdupq_n_u8(b'(')), vdupq_n_u8(2));
-            let quote = vceqq_u8(input, vdupq_n_u8(b'"'));
-            let backslash = vceqq_u8(input, vdupq_n_u8(b'\\'));
+        #[target_feature(enable = "neon,aes")]
+        #[inline]
+        unsafe fn classify_quote_neon(&self, input: uint8x16_t) -> uint8x16_t {
+            vceqq_u8(input, vdupq_n_u8(b'"'))
+        }
 
-            let mut atom_like = input.clone();
-            self.atom_terminator_classifier.classify_neon(std::slice::from_mut(&mut atom_like));
-            let atom_like = vceqq_u8(atom_like, vdupq_n_u8(0));
+        #[target_feature(enable = "neon,aes")]
+        #[inline]
+        unsafe fn classify_backslash_neon(&self, input: uint8x16_t) -> uint8x16_t {
+            vceqq_u8(input, vdupq_n_u8(b'\\'))
+        }
 
-            ClassifyOneNeon {
-                parens,
-                quote,
-                backslash,
-                atom_like,
-            }
+        #[target_feature(enable = "neon,aes")]
+        #[inline]
+        unsafe fn classify_atom_like_neon(&self, mut input: uint8x16_t) -> uint8x16_t {
+            self.atom_terminator_classifier.classify_neon(std::slice::from_mut(&mut input));
+            vceqq_u8(input, vdupq_n_u8(0))
         }
 
         #[target_feature(enable = "neon,aes")]
         #[inline]
         unsafe fn structural_indices_bitmask_one_neon(&mut self, input: &uint8x16x4_t) -> u64 {
             let ld4 = vld4q_u8(input as *const _ as *const u8);
-            let classify_0 = self.classify_one_neon(ld4.0);
-            let classify_1 = self.classify_one_neon(ld4.1);
-            let classify_2 = self.classify_one_neon(ld4.2);
-            let classify_3 = self.classify_one_neon(ld4.3);
 
-            let bm_parens = utils::make_bitmask_ld4_interleaved(uint8x16x4_t(classify_0.parens, classify_1.parens, classify_2.parens, classify_3.parens));
-            let bm_quote = utils::make_bitmask_ld4_interleaved(uint8x16x4_t(classify_0.quote, classify_1.quote, classify_2.quote, classify_3.quote));
-            let bm_backslash = utils::make_bitmask_ld4_interleaved(uint8x16x4_t(classify_0.backslash, classify_1.backslash, classify_2.backslash, classify_3.backslash));
-            let bm_atom_like = utils::make_bitmask_ld4_interleaved(uint8x16x4_t(classify_0.atom_like, classify_1.atom_like, classify_2.atom_like, classify_3.atom_like));
+            let bm_parens = utils::make_bitmask_ld4_interleaved(uint8x16x4_t(
+                self.classify_parens_neon(ld4.0),
+                self.classify_parens_neon(ld4.1),
+                self.classify_parens_neon(ld4.2),
+                self.classify_parens_neon(ld4.3)));
+            let bm_quote = utils::make_bitmask_ld4_interleaved(uint8x16x4_t(
+                self.classify_quote_neon(ld4.0),
+                self.classify_quote_neon(ld4.1),
+                self.classify_quote_neon(ld4.2),
+                self.classify_quote_neon(ld4.3)));
+            let bm_backslash = utils::make_bitmask_ld4_interleaved(uint8x16x4_t(
+                self.classify_backslash_neon(ld4.0),
+                self.classify_backslash_neon(ld4.1),
+                self.classify_backslash_neon(ld4.2),
+                self.classify_backslash_neon(ld4.3)));
+            let bm_atom_like = utils::make_bitmask_ld4_interleaved(uint8x16x4_t(
+                self.classify_atom_like_neon(ld4.0),
+                self.classify_atom_like_neon(ld4.1),
+                self.classify_atom_like_neon(ld4.2),
+                self.classify_atom_like_neon(ld4.3)));
+
             let (escaped, escape_state) = ranges::odd_range_ends(bm_backslash, self.escape);
             self.escape = escape_state;
 
