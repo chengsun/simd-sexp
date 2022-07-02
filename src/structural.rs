@@ -97,11 +97,6 @@ mod x86 {
 
         /* fallback */
         generic: Generic,
-
-        /* varying */
-        escape: bool,
-        quote_state: bool,
-        atom_like: bool,
     }
 
     impl Avx2 {
@@ -120,26 +115,10 @@ mod x86 {
                 atom_terminator_classifier,
                 xor_masked_adjacent,
                 generic,
-                escape: false,
-                quote_state: false,
-                atom_like: false,
             })
         }
 
-        fn copy_state_from_generic(&mut self) {
-            self.escape = self.generic.escape;
-            self.quote_state = self.generic.quote_state;
-            self.atom_like = self.generic.atom_like;
-        }
-
-        fn copy_state_to_generic(&mut self) {
-            self.generic.escape = self.escape;
-            self.generic.quote_state = self.quote_state;
-            self.generic.atom_like = self.atom_like;
-        }
-
         pub fn get_generic_state(&mut self) -> Generic {
-            self.copy_state_to_generic();
             self.generic
         }
 
@@ -186,21 +165,21 @@ mod x86 {
             let bm_backslash = utils::make_bitmask(backslash_lo, backslash_hi);
             let bm_atom_like = utils::make_bitmask(atom_like_lo, atom_like_hi);
 
-            let (escaped, escape_state) = ranges::odd_range_ends(bm_backslash, self.escape);
-            self.escape = escape_state;
+            let (escaped, escape_state) = ranges::odd_range_ends(bm_backslash, self.generic.escape);
+            self.generic.escape = escape_state;
 
             let escaped_quotes = bm_quote & escaped;
             let unescaped_quotes = bm_quote & !escaped;
             let prev_quote_state = self.quote_state;
-            let (quote_transitions, quote_state) = find_quote_transitions::find_quote_transitions(&self.clmul, &self.xor_masked_adjacent, unescaped_quotes, escaped_quotes, self.quote_state);
-            self.quote_state = quote_state;
+            let (quote_transitions, quote_state) = find_quote_transitions::find_quote_transitions(&self.clmul, &self.xor_masked_adjacent, unescaped_quotes, escaped_quotes, self.generic.quote_state);
+            self.generic.quote_state = quote_state;
             let quoted_areas = self.clmul.clmul(quote_transitions) ^ (if prev_quote_state { !0u64 } else { 0u64 });
 
             let bm_atom_like = bm_atom_like & !quoted_areas;
 
-            let special = (quote_transitions & quoted_areas) | (!quoted_areas & (bm_parens | ranges::range_transitions(bm_atom_like, self.atom_like)));
+            let special = (quote_transitions & quoted_areas) | (!quoted_areas & (bm_parens | ranges::range_transitions(bm_atom_like, self.generic.atom_like)));
 
-            self.atom_like = bm_atom_like >> 63 != 0;
+            self.generic.atom_like = bm_atom_like >> 63 != 0;
 
             special
         }
@@ -213,9 +192,7 @@ mod x86 {
         fn structural_indices_bitmask<F: FnMut(u64, usize) -> CallbackResult>(&mut self, input_buf: &[u8], mut f: F) {
             let (prefix, aligned, suffix) = unsafe { input_buf.align_to::<(__m256i, __m256i)>() };
             if utils::unlikely(prefix.len() > 0) {
-                self.copy_state_to_generic();
                 let (bitmask, len) = self.generic.structural_indices_bitmask_one(prefix);
-                self.copy_state_from_generic();
                 debug_assert!(len == prefix.len());
                 match f(bitmask, len) {
                     CallbackResult::Continue => (),
@@ -232,9 +209,7 @@ mod x86 {
                 }
             }
             if utils::unlikely(suffix.len() > 0) {
-                self.copy_state_to_generic();
                 let (bitmask, len) = self.generic.structural_indices_bitmask_one(suffix);
-                self.copy_state_from_generic();
                 debug_assert!(len == suffix.len());
                 match f(bitmask, len) {
                     CallbackResult::Continue => (),
@@ -265,13 +240,8 @@ mod aarch64 {
         atom_terminator_classifier: vector_classifier::NeonClassifier,
         xor_masked_adjacent: xor_masked_adjacent::Generic,
 
-        /* fallback */
-        generic: Generic,
-
         /* varying */
-        escape: bool,
-        quote_state: bool,
-        atom_like: bool,
+        generic: Generic,
     }
 
     impl Neon {
@@ -290,26 +260,10 @@ mod aarch64 {
                 atom_terminator_classifier,
                 xor_masked_adjacent,
                 generic,
-                escape: false,
-                quote_state: false,
-                atom_like: false,
             })
         }
 
-        fn copy_state_from_generic(&mut self) {
-            self.escape = self.generic.escape;
-            self.quote_state = self.generic.quote_state;
-            self.atom_like = self.generic.atom_like;
-        }
-
-        fn copy_state_to_generic(&mut self) {
-            self.generic.escape = self.escape;
-            self.generic.quote_state = self.quote_state;
-            self.generic.atom_like = self.atom_like;
-        }
-
         pub fn get_generic_state(&mut self) -> Generic {
-            self.copy_state_to_generic();
             self.generic
         }
 
@@ -364,21 +318,21 @@ mod aarch64 {
                 self.classify_atom_like_neon(ld4.2),
                 self.classify_atom_like_neon(ld4.3)));
 
-            let (escaped, escape_state) = ranges::odd_range_ends(bm_backslash, self.escape);
-            self.escape = escape_state;
+            let (escaped, escape_state) = ranges::odd_range_ends(bm_backslash, self.generic.escape);
+            self.generic.escape = escape_state;
 
             let escaped_quotes = bm_quote & escaped;
             let unescaped_quotes = bm_quote & !escaped;
-            let prev_quote_state = self.quote_state;
-            let (quote_transitions, quote_state) = find_quote_transitions::find_quote_transitions(&self.clmul, &self.xor_masked_adjacent, unescaped_quotes, escaped_quotes, self.quote_state);
-            self.quote_state = quote_state;
+            let prev_quote_state = self.generic.quote_state;
+            let (quote_transitions, quote_state) = find_quote_transitions::find_quote_transitions(&self.clmul, &self.xor_masked_adjacent, unescaped_quotes, escaped_quotes, self.generic.quote_state);
+            self.generic.quote_state = quote_state;
             let quoted_areas = self.clmul.clmul(quote_transitions) ^ (if prev_quote_state { !0u64 } else { 0u64 });
 
             let bm_atom_like = bm_atom_like & !quoted_areas;
 
-            let special = (quote_transitions & quoted_areas) | (!quoted_areas & (bm_parens | ranges::range_transitions(bm_atom_like, self.atom_like)));
+            let special = (quote_transitions & quoted_areas) | (!quoted_areas & (bm_parens | ranges::range_transitions(bm_atom_like, self.generic.atom_like)));
 
-            self.atom_like = bm_atom_like >> 63 != 0;
+            self.generic.atom_like = bm_atom_like >> 63 != 0;
 
             special
         }
@@ -391,9 +345,7 @@ mod aarch64 {
         fn structural_indices_bitmask<F: FnMut(u64, usize) -> CallbackResult>(&mut self, input_buf: &[u8], mut f: F) {
             let (prefix, aligned, suffix) = unsafe { input_buf.align_to::<uint8x16x4_t>() };
             if utils::unlikely(prefix.len() > 0) {
-                self.copy_state_to_generic();
                 let (bitmask, len) = self.generic.structural_indices_bitmask_one(prefix);
-                self.copy_state_from_generic();
                 debug_assert!(len == prefix.len());
                 match f(bitmask, len) {
                     CallbackResult::Continue => (),
@@ -410,9 +362,7 @@ mod aarch64 {
                 }
             }
             if utils::unlikely(suffix.len() > 0) {
-                self.copy_state_to_generic();
                 let (bitmask, len) = self.generic.structural_indices_bitmask_one(suffix);
-                self.copy_state_from_generic();
                 debug_assert!(len == suffix.len());
                 match f(bitmask, len) {
                     CallbackResult::Continue => (),
