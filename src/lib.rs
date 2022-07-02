@@ -10,6 +10,7 @@ pub mod ocaml_parser;
 pub mod parser;
 #[cfg(feature = "threads")]
 pub mod parser_parallel;
+pub mod print;
 pub mod ranges;
 pub mod rust_generator;
 pub mod rust_parser;

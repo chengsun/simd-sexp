@@ -35,6 +35,11 @@ name = "benches"
 harness = false
 
 [[bin]]
+name = "print"
+path = "bin/print.rs"
+required-features = []
+
+[[bin]]
 name = "profile"
 path = "bin/profile.rs"
 required-features = ["threads", "vtune"]

@@ -1,16 +1,27 @@
 use crate::structural;
 use crate::vector_classifier::{self, ClassifierBuilder, Classifier};
 
-pub fn escape_is_necessary(input: &[u8]) -> bool {
-    let vector_classifier = vector_classifier::GenericBuilder::new().build(&structural::not_atom_like_lookup_tables());
-    for ch in input {
-        let mut ch_copy = [ch.clone()];
-        vector_classifier.classify(&mut ch_copy);
-        if ch_copy[0] != 0 || *ch == b'\\' || *ch < 0x20 || *ch >= 0x80 {
-            return true;
+pub struct IsNecessary {
+    vector_classifier: vector_classifier::GenericClassifier,
+}
+
+impl IsNecessary {
+    pub fn new() -> Self {
+        Self {
+            vector_classifier: vector_classifier::GenericBuilder::new().build(&structural::not_atom_like_lookup_tables()),
         }
     }
-    false
+
+    pub fn eval(&self, input: &[u8]) -> bool {
+        for ch in input {
+            let mut ch_copy = [ch.clone()];
+            self.vector_classifier.classify(&mut ch_copy);
+            if ch_copy[0] != 0 || *ch == b'\\' || *ch < 0x20 || *ch >= 0x80 {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 pub fn escape<WriterT: std::io::Write>(input: &[u8], output: &mut WriterT) -> Result<(), std::io::Error> {
