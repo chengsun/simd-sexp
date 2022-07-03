@@ -34,8 +34,8 @@ $ < test.sexp cargo run --release --bin select -- foo bar
 Does something similar to `sexp print -mach`.
 
 Runs at:
-*  1600MiB/s on an Apple M1 Pro (using 5 threads, specialised NEON code).
-*  400MiB/s on an Apple M1 Pro (using 1 thread, specialised NEON code).
+*  900MiB/s on an Intel Kaby Lake laptop CPU (using 4 threads, specialised AVX2 code);
+*  1400MiB/s on an Apple M1 Pro (using 5 threads, specialised NEON code).
 
 Run this as follows:
 
