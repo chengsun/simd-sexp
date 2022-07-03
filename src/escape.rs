@@ -7,8 +7,16 @@ pub struct IsNecessary {
 
 impl IsNecessary {
     pub fn new() -> Self {
+        let accept: Vec<bool> = (0..=255).map(|ch| {
+            match ch {
+                b' ' | b'\t' | b'\n' | b'(' | b')' | b'"' |
+                b'\\' | (0x00..=0x1F) | (0x80..=0xFF) => true,
+                _ => false,
+            }
+        }).collect();
+        let lookup_tables = vector_classifier::LookupTables::new(&accept.try_into().unwrap()).unwrap();
         Self {
-            vector_classifier: vector_classifier::GenericBuilder::new().build(&structural::not_atom_like_lookup_tables()),
+            vector_classifier: vector_classifier::GenericBuilder::new().build(&lookup_tables),
         }
     }
 
@@ -16,7 +24,7 @@ impl IsNecessary {
         for ch in input {
             let mut ch_copy = [ch.clone()];
             self.vector_classifier.classify(&mut ch_copy);
-            if ch_copy[0] != 0 || *ch == b'\\' || *ch < 0x20 || *ch >= 0x80 {
+            if ch_copy[0] != 0 {
                 return true;
             }
         }
