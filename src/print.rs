@@ -32,6 +32,22 @@ impl parser::WritingStage2 for Stage2 {
     fn process_one<WriteT: Write>(&mut self, writer: &mut WriteT, input: parser::Input, this_index: usize, next_index: usize, _is_eof: bool) -> Result<usize, parser::Error> {
         let ch = input.input[this_index - input.offset];
 
+        let mut output_atom = |atom: &[u8]| {
+            if self.escape_is_necessary.eval(&atom[..]) {
+                writer.write_all(&b"\""[..]).unwrap();
+                escape::escape(&atom[..], writer).unwrap();
+                writer.write_all(&b"\""[..]).unwrap();
+                self.naked_atom_needs_space = false;
+            } else {
+                if self.naked_atom_needs_space {
+                    writer.write_all(&b" "[..]).unwrap();
+                }
+                writer.write_all(&atom[..]).unwrap();
+                self.naked_atom_needs_space = true;
+            }
+        };
+
+
         match ch {
             b'(' => {
                 writer.write_all(&b"("[..]).unwrap();
@@ -53,25 +69,10 @@ impl parser::WritingStage2 for Stage2 {
                     self.unescape.unescape(
                         &input.input[(this_index + 1 - input.offset)..(next_index - input.offset)],
                         &mut buf[..]).unwrap();
-                if self.escape_is_necessary.eval(&buf[..]) {
-                    writer.write_all(&b"\""[..]).unwrap();
-                    escape::escape(&buf[..output_index], writer).unwrap();
-                    writer.write_all(&b"\""[..]).unwrap();
-                    self.naked_atom_needs_space = false;
-                } else {
-                    if self.naked_atom_needs_space {
-                        writer.write_all(&b" "[..]).unwrap();
-                    }
-                    writer.write_all(&input.input[(this_index - input.offset)..(next_index - input.offset)]).unwrap();
-                    self.naked_atom_needs_space = true;
-                }
+                output_atom(&buf[..output_index]);
             },
             _ => {
-                if self.naked_atom_needs_space {
-                    writer.write_all(&b" "[..]).unwrap();
-                }
-                writer.write_all(&input.input[(this_index - input.offset)..(next_index - input.offset)]).unwrap();
-                self.naked_atom_needs_space = true;
+                output_atom(&input.input[(this_index - input.offset)..(next_index - input.offset)]);
             },
         }
 
