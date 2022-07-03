@@ -1,4 +1,3 @@
-use crate::structural;
 use crate::vector_classifier::{self, ClassifierBuilder, Classifier};
 
 pub struct IsNecessary {
