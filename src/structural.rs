@@ -170,7 +170,7 @@ mod x86 {
 
             let escaped_quotes = bm_quote & escaped;
             let unescaped_quotes = bm_quote & !escaped;
-            let prev_quote_state = self.quote_state;
+            let prev_quote_state = self.generic.quote_state;
             let (quote_transitions, quote_state) = find_quote_transitions::find_quote_transitions(&self.clmul, &self.xor_masked_adjacent, unescaped_quotes, escaped_quotes, self.generic.quote_state);
             self.generic.quote_state = quote_state;
             let quoted_areas = self.clmul.clmul(quote_transitions) ^ (if prev_quote_state { !0u64 } else { 0u64 });
