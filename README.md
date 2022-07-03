@@ -29,6 +29,16 @@ Run this as follows:
 $ < test.sexp cargo run --release --bin select -- foo bar
 ```
 
+### A fast "print" CLI tool
+
+Does something similar to `sexp print -mach`.
+
+Run this as follows:
+
+```
+$ < test.sexp cargo run --release --bin print
+```
+
 ### A tool for parallelising other sexp filters
 
 This tool parallelises any filter-like sexp CLI, like `sexp query`.
