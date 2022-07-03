@@ -45,6 +45,10 @@ impl parser::WritingStage2 for Stage2 {
                 writer.write_all(&atom[..]).unwrap();
                 self.naked_atom_needs_space = true;
             }
+            if self.depth == 0 {
+                writer.write_all(&b"\n"[..]).unwrap();
+                self.naked_atom_needs_space = false;
+            }
         };
 
 
