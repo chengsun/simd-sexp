@@ -9,7 +9,7 @@ impl IsNecessary {
         let accept: Vec<bool> = (0..=255).map(|ch| {
             match ch {
                 b' ' | b'\t' | b'\n' | b'(' | b')' | b'"' |
-                b'\\' | (0x00..=0x1F) | (0x80..=0xFF) => true,
+                b';' | b'\\' | (0x00..=0x1F) | (0x80..=0xFF) => true,
                 _ => false,
             }
         }).collect();
@@ -20,10 +20,18 @@ impl IsNecessary {
     }
 
     pub fn eval(&self, input: &[u8]) -> bool {
-        for ch in input {
-            let mut ch_copy = [ch.clone()];
+        if input.len() == 0 {
+            return true;
+        }
+
+        // TODO: currently this is super naive; use the vectorised classifier??
+        for i in 0..input.len() {
+            let mut ch_copy = [input[i]];
             self.vector_classifier.classify(&mut ch_copy);
-            if ch_copy[0] != 0 {
+            if ch_copy[0] != 0 ||
+                (i + 1 < input.len() &&
+                    (&input[i..(i+2)] == b"#|" ||
+                     &input[i..(i+2)] == b"|#")) {
                 return true;
             }
         }
@@ -32,13 +40,6 @@ impl IsNecessary {
 }
 
 pub fn escape<WriterT: std::io::Write>(input: &[u8], output: &mut WriterT) -> Result<(), std::io::Error> {
-    fn hex_char(i: u8) -> u8 {
-        match i {
-            (0..=9) => i + b'0',
-            (10..=15) => i - 10 + b'a',
-            _ => panic!("invalid integer to encode into single hex char: {}", i),
-        }
-    }
     for ch in input {
         match ch {
             b'"' => output.write_all(b"\\\"")?,
@@ -47,7 +48,12 @@ pub fn escape<WriterT: std::io::Write>(input: &[u8], output: &mut WriterT) -> Re
             b'\n' => output.write_all(b"\\n")?,
             b'\r' => output.write_all(b"\\r")?,
             b'\t' => output.write_all(b"\\t")?,
-            (0x00..=0x1F) | (0x80..=0xFF) => output.write_all(&[b'\\', b'x', hex_char(ch / 0x10), hex_char(ch % 0x10)])?,
+            (0x00..=0x1F) | (0x80..=0xFF) => {
+                let (d1, ch) = (ch / 100, ch % 100);
+                let (d2, ch) = (ch / 10, ch % 10);
+                let d3 = ch;
+                output.write_all(&[b'\\', d1 + b'0', d2 + b'0', d3 + b'0'])?
+            },
             _ => output.write_all(std::slice::from_ref(ch))?,
         }
     }
