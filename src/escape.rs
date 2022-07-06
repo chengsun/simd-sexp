@@ -30,8 +30,9 @@ impl IsNecessary {
             self.vector_classifier.classify(&mut ch_copy);
             if ch_copy[0] != 0 ||
                 (i + 1 < input.len() &&
-                    (&input[i..(i+2)] == b"#|" ||
-                     &input[i..(i+2)] == b"|#")) {
+                 (&input[i..(i+2)] == b"#|" ||
+                  &input[i..(i+2)] == b"|#"))
+            {
                 return true;
             }
         }
