@@ -75,11 +75,27 @@ let cmd_exec =
      fun () -> Simd_sexp.Exec.exec_parallel ~prog ~args)
 ;;
 
+let cmd_print =
+  Command.basic
+    ~summary:"Reformat and print sexp"
+    (let%map_open.Command format =
+       choose_one
+         ~if_nothing_chosen:Raise
+         [ flag "-mach" no_arg ~doc:" print using machine format (one sexp per line)"
+           |> map ~f:(fun b -> Option.some_if b `Mach)
+         ]
+     and threads =
+       flag "-no-threads" no_arg ~doc:" use single-threaded mode" |> map ~f:not
+     in
+     fun () -> Simd_sexp.Print.print ~format ~threads)
+;;
+
 let command =
   Command.group
     ~summary:"sexp tool"
     [ "exec", cmd_exec
     ; "multi-select", cmd_multi_select
+    ; "print", cmd_print
     ; "profile-test", cmd_profile_test
     ]
 ;;

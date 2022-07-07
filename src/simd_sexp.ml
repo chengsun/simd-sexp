@@ -190,3 +190,9 @@ module Exec = struct
 
   let exec_parallel ~prog ~args = _exec_parallel prog args
 end
+
+module Print = struct
+  external _print : bool -> unit = "ml_print"
+
+  let print ~format:`Mach ~threads = _print threads
+end

@@ -39,3 +39,7 @@ end
 module Exec : sig
   val exec_parallel : prog:string -> args:string list -> unit
 end
+
+module Print : sig
+  val print : format:[ `Mach ] -> threads:bool -> unit
+end

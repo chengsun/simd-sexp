@@ -103,3 +103,18 @@ pub fn make<'a, ReadT: BufRead + Send, WriteT: Write>
 
     parser::streaming_from_writing_stage2(Stage2::new(), stdout)
 }
+
+#[cfg(feature = "ocaml")]
+mod ocaml_ffi {
+    use super::*;
+    use crate::utils;
+
+    #[ocaml::func]
+    pub fn ml_print(threads: bool) {
+        let mut stdin = utils::stdin();
+        let mut stdout = utils::stdout();
+
+        let mut printer = make(&mut stdout, threads);
+        let () = printer.process_streaming(parser::SegmentIndex::EntireFile, &mut stdin).unwrap();
+    }
+}
