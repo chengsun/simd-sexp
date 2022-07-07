@@ -70,8 +70,7 @@ let cmd_multi_select =
 let cmd_exec =
   Command.basic
     ~summary:"Run filter command (that accepts sexps in stdin) in parallel"
-    (let%map_open.Command prog = anon ("PROG" %: string)
-     and args = anon (non_empty_sequence_as_list ("ARGS" %: string)) in
+    (let%map_open.Command (prog, args) = escape_anon ~final_anon:("PROG" %: string) in
      fun () -> Simd_sexp.Exec.exec_parallel ~prog ~args)
 ;;
 
