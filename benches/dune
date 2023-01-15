@@ -1,3 +1,5 @@
 (executable
  (name benches)
- (libraries core core_bench core_unix.command_unix core_unix.sys_unix simd_sexp))
+ (libraries core core_bench core_unix.command_unix core_unix.sys_unix simd_sexp)
+ (preprocess
+  (pps ppx_expect ppx_jane)))

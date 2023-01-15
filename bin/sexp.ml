@@ -10,6 +10,10 @@ let profile ~filename =
   let sexps_from_simd_sexp = Simd_sexp.of_string_many file_contents in
   let end_time = Time_ns.now () in
   printf !"Simd_sexp elapsed: %{Time_ns.Span#hum}\n%!" (Time_ns.diff end_time start_time);
+  let start_time = Time_ns.now () in
+  let tape_from_simd_sexp = Simd_sexp.Tape.of_string_multi file_contents in
+  let end_time = Time_ns.now () in
+  printf !"Simd_sexp.Tape elapsed: %{Time_ns.Span#hum}\n%!" (Time_ns.diff end_time start_time);
   let rec assert_sexp_equality (a : Sexp.t) (b : Sexp.t) =
     match a, b with
     | Atom a, Atom b ->
@@ -25,7 +29,8 @@ let profile ~filename =
             "list with differing lengths", (List.length la : int), (List.length lb : int)])
     | _ -> raise_s [%sexp "one is atom other is list"]
   in
-  assert_sexp_equality (Sexp.List sexps_from_core_sexp) (Sexp.List sexps_from_simd_sexp)
+  assert_sexp_equality (Sexp.List sexps_from_core_sexp) (Sexp.List sexps_from_simd_sexp);
+  assert_sexp_equality (Sexp.List sexps_from_core_sexp) (Sexp.List (Simd_sexp.Tape.to_native_multi tape_from_simd_sexp))
 ;;
 
 let cmd_profile_test =

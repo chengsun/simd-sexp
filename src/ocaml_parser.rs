@@ -143,7 +143,7 @@ pub fn ml_parse_sexp(input: &[u8]) -> OCamlResult<Vec<ocaml::Value>> {
     OCamlResult(result.map_err(|err| err.to_string()))
 }
 
-impl ocaml::Custom for rust_parser::Tape {
+impl ocaml::Custom for rust_parser::SplitTape {
     const NAME: &'static str = "Tape";
     const OPS: ocaml::custom::CustomOps = ocaml::custom::DEFAULT_CUSTOM_OPS;
     const FIXED_LENGTH: Option<ocaml::sys::custom_fixed_length> = None;
@@ -152,9 +152,9 @@ impl ocaml::Custom for rust_parser::Tape {
 }
 
 #[ocaml::func]
-pub fn ml_parse_sexp_to_rust(input: &[u8]) -> OCamlResult<rust_parser::Tape> {
+pub fn ml_parse_sexp_to_rust(input: &[u8]) -> OCamlResult<rust_parser::SplitTape> {
 
-    let mut parser = parser::parser_from_visitor(rust_parser::TapeVisitor::new());
+    let mut parser = parser::parser_from_visitor(rust_parser::SplitTapeVisitor::new());
     let result = parser.process(parser::SegmentIndex::EntireFile, input);
     OCamlResult(result.map_err(|err| err.to_string()))
 }

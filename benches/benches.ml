@@ -31,12 +31,19 @@ let simd_sexp_rust_sexp_bench_test =
     (fun `init () -> Simd_sexp.of_string_many_rust_sexp sample_sexp_contents)
 ;;
 
+let simd_sexp_tape_bench_test =
+  Core_bench.Bench.Test.create_with_initialization
+    ~name:"simd_sexp (rust stage1, rust stage2, tape type)"
+    (fun `init () -> Simd_sexp.Tape.of_string_multi sample_sexp_contents)
+;;
+
 let command =
   Core_bench.Bench.make_command
     [ parsexp_bench_test
     ; simd_sexp_bench_test
     ; simd_sexp_rust_bench_test
     ; simd_sexp_rust_sexp_bench_test
+    ; simd_sexp_tape_bench_test
     ]
 ;;
 

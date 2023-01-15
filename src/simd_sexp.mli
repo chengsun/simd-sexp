@@ -43,3 +43,5 @@ end
 module Print : sig
   val print : format:[ `Mach ] -> threads:bool -> unit
 end
+
+module Tape = Tape

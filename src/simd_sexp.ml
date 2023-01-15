@@ -196,3 +196,5 @@ module Print = struct
 
   let print ~format:`Mach ~threads = _print threads
 end
+
+module Tape = Tape

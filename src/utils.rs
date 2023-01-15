@@ -188,6 +188,42 @@ pub fn write_u32(buf: &mut [u8], n: u32) {
     }
 }
 
+#[inline]
+pub fn slice_u32_to_u8(arr: &[u32]) -> &[u8] {
+    let len = 4 * arr.len();
+    let ptr = arr.as_ptr() as *const u8;
+    unsafe {
+        std::slice::from_raw_parts(ptr, len)
+    }
+}
+
+#[inline]
+pub fn slice_u32_to_u8_mut(arr: &mut [u32]) -> &mut [u8] {
+    let len = 4 * arr.len();
+    let ptr = arr.as_ptr() as *mut u8;
+    unsafe {
+        std::slice::from_raw_parts_mut(ptr, len)
+    }
+}
+
+#[inline]
+pub fn slice_u32_to_i32(arr: &[u32]) -> &[i32] {
+    let len = arr.len();
+    let ptr = arr.as_ptr() as *const i32;
+    unsafe {
+        std::slice::from_raw_parts(ptr, len)
+    }
+}
+
+#[inline]
+pub fn slice_i32_to_u32(arr: &[i32]) -> &[u32] {
+    let len = arr.len();
+    let ptr = arr.as_ptr() as *const u32;
+    unsafe {
+        std::slice::from_raw_parts(ptr, len)
+    }
+}
+
 pub fn stdin() -> std::io::BufReader<std::fs::File> {
     use std::os::unix::io::FromRawFd;
     let stdin = unsafe { std::fs::File::from_raw_fd(0) };
