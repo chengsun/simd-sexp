@@ -4,13 +4,23 @@ use ocaml::IntoValue;
 
 // Needs to be in a Box<> for alignment guarantees (which the OCaml GC cannot
 // provide when it's relocating stuff)
+#[cfg(target_arch = "x86_64")]
 pub struct ExtractStructuralIndicesState(Box<structural::Avx2>);
+#[cfg(target_arch = "aarch64")]
+pub struct ExtractStructuralIndicesState(Box<structural::Neon>);
 
 ocaml::custom! (ExtractStructuralIndicesState);
 
 #[ocaml::func]
 pub fn ml_extract_structural_indices_create_state(_unit: ocaml::Value) -> ExtractStructuralIndicesState {
-    ExtractStructuralIndicesState(Box::new(structural::Avx2::new().unwrap()))
+    #[cfg(target_arch = "x86_64")]
+    {
+        ExtractStructuralIndicesState(Box::new(structural::Avx2::new().unwrap()))
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        ExtractStructuralIndicesState(Box::new(structural::Neon::new().unwrap()))
+    }
 }
 
 #[ocaml::func]
