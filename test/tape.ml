@@ -116,3 +116,36 @@ let%expect_test "atom_to_string" =
     foo
     bar |}];
 ;;
+
+let%expect_test "parse_multi_partial" =
+  let partial state string =
+    string
+    |> Simd_sexp.Tape.parse_multi_partial state
+    |> ok_exn
+    |> Simd_sexp.Tape.to_string_multi
+    |> print_endline
+  in
+  let eof state =
+    Simd_sexp.Tape.parse_multi_eof state
+    |> ok_exn
+    |> Simd_sexp.Tape.to_string_multi
+    |> print_endline
+  in
+  let state = Simd_sexp.Tape.Parser_state.create () in
+  partial state "";
+  [%expect {| |}];
+  partial state "x";
+  [%expect {| |}];
+  partial state "y";
+  [%expect {| |}];
+  partial state " ";
+  [%expect {| xy |}];
+  partial state "a";
+  [%expect {| |}];
+  partial state "a b (";
+  [%expect {| aa b |}];
+  partial state "c)";
+  [%expect {| |}];
+  eof state;
+  [%expect {| (c) |}];
+;;

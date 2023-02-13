@@ -12,10 +12,10 @@ module Tape = struct
   ;;
 end
 
-external _parse_single_tape : string -> (Tape.t, string) result = "ml_rust_parser_single_tape"
+external _parse_single : string -> (Tape.t, string) result = "ml_rust_parser_single_tape"
 
-let parse_single_tape string =
-  match _parse_single_tape string with
+let parse_single string =
+  match _parse_single string with
   | Ok tape -> Ok tape
   | Error error_string -> Or_error.error_string error_string
 ;;
@@ -84,7 +84,7 @@ let sexp_of_t (type a) _ (t : a t) =
 ;;
 
 let of_string_multi string =
-  let tape = parse_single_tape string |> ok_exn in
+  let tape = parse_single string |> ok_exn in
   Multi (Pointer.create tape)
 ;;
 
@@ -253,4 +253,28 @@ let of_native_multi sexps =
   let builder = Builder.create () in
   Builder.of_native_multi builder sexps;
   Builder.finalize builder
+;;
+
+module Parser_state = struct
+  type t
+
+  external create : unit -> t = "ml_rust_parser_single_tape_parser_state_create"
+end
+
+external _parse_partial : Parser_state.t -> string -> (Tape.t, string) result
+  = "ml_rust_parser_single_tape_parse_partial"
+
+external _parse_eof : Parser_state.t -> (Tape.t, string) result
+  = "ml_rust_parser_single_tape_parse_eof"
+
+let parse_multi_partial parser_state string =
+  match _parse_partial parser_state string with
+  | Ok tape -> Ok (Multi (Pointer.create tape))
+  | Error error_string -> Or_error.error_string error_string
+;;
+
+let parse_multi_eof parser_state =
+  match _parse_eof parser_state with
+  | Ok tape -> Ok (Multi (Pointer.create tape))
+  | Error error_string -> Or_error.error_string error_string
 ;;

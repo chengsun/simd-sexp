@@ -33,6 +33,12 @@ pub trait WritingStage2 {
     fn process_eof<WriteT: Write>(&mut self, writer: &mut WriteT) -> Result<(), Error>;
 }
 
+pub trait ExtractPartialResult {
+    type PartialReturn;
+
+    fn extract_partial_result(&mut self) -> Self::PartialReturn;
+}
+
 /// Adapter for a WritingStage2 to become a Stage2
 /// This adapter simply takes the mutable reference to the writer at
 /// construction time, and retains this for the lifetime of the adapter. This is
@@ -142,6 +148,13 @@ impl<VisitorT: Visitor> Stage2 for VisitorState<VisitorT> {
 
 }
 
+impl<VisitorT: Visitor + ExtractPartialResult> ExtractPartialResult for VisitorState<VisitorT> {
+    type PartialReturn = VisitorT::PartialReturn;
+    fn extract_partial_result(&mut self) -> Self::PartialReturn {
+        self.visitor.extract_partial_result()
+    }
+}
+
 /// Must be >= 64. Doesn't affect correctness or impose limitations on sexp being parsed.
 const INDICES_BUFFER_MAX_LEN: usize = 8092;
 
@@ -172,6 +185,14 @@ impl std::fmt::Display for Error {
             Error::BadQuotedAtom => { write!(f, "Bad quoted atom") }
             Error::IOError(e) => { write!(f, "IO error: {}", e) }
         }
+    }
+}
+
+impl<ClassifierT, Stage2T: Stage2 + ExtractPartialResult> ExtractPartialResult for State<ClassifierT, Stage2T> {
+    type PartialReturn = Stage2T::PartialReturn;
+
+    fn extract_partial_result(&mut self) -> Self::PartialReturn {
+        self.stage2.extract_partial_result()
     }
 }
 
@@ -329,12 +350,12 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> Parse for State<Class
     }
 }
 
-pub trait ParsePartial: Parse {
+pub trait ParsePartial: Parse + ExtractPartialResult {
     fn process_partial(&mut self, input: &[u8]) -> Result<(), Error>;
     fn process_eof(&mut self) -> Result<Self::Return, Error>;
 }
 
-impl<ClassifierT: structural::Classifier, Stage2T: Stage2> ParsePartial for State<ClassifierT, Stage2T> {
+impl<ClassifierT: structural::Classifier, Stage2T: Stage2 + ExtractPartialResult> ParsePartial for State<ClassifierT, Stage2T> {
     fn process_partial(&mut self, input: &[u8]) -> Result<(), Error> {
         self.process_partial(input)
     }
@@ -360,30 +381,49 @@ struct MakeParserFromClassifierCps<Stage2T> {
 }
 
 impl<'a, Stage2T: Stage2 + 'a> structural::MakeClassifierCps<'a> for MakeParserFromClassifierCps<Stage2T> {
-    type Return = Box<dyn ParsePartial<Return = Stage2T::Return> + 'a>;
+    type Return = Box<dyn Parse<Return = Stage2T::Return> + 'a>;
     fn f<ClassifierT: structural::Classifier + 'a>(self: Self, classifier: ClassifierT) -> Self::Return {
         Box::new(State::new(classifier, self.stage2))
     }
 }
 
-pub fn parser_new<'a, Stage2T: Stage2 + 'a>(stage2: Stage2T) -> Box<dyn ParsePartial<Return = Stage2T::Return> + 'a> {
+pub fn parser_new<'a, Stage2T: Stage2 + 'a>(stage2: Stage2T) -> Box<dyn Parse<Return = Stage2T::Return> + 'a> {
     structural::make_classifier_cps(MakeParserFromClassifierCps { stage2 })
 }
 
-pub fn parser_from_visitor<'a, VisitorT: Visitor + 'a>(visitor: VisitorT) -> Box<dyn ParsePartial<Return = VisitorT::Return> + 'a> {
+struct MakePartialParserFromClassifierCps<Stage2T> {
+    stage2: Stage2T,
+}
+
+impl<'a, Stage2T: Stage2 + ExtractPartialResult + 'a> structural::MakeClassifierCps<'a> for MakePartialParserFromClassifierCps<Stage2T> {
+    type Return = Box<dyn ParsePartial<Return = Stage2T::Return, PartialReturn = Stage2T::PartialReturn> + 'a>;
+    fn f<ClassifierT: structural::Classifier + 'a>(self: Self, classifier: ClassifierT) -> Self::Return {
+        Box::new(State::new(classifier, self.stage2))
+    }
+}
+
+pub fn partial_parser_new<'a, Stage2T: Stage2 + ExtractPartialResult + 'a>(stage2: Stage2T) -> Box<dyn ParsePartial<Return = Stage2T::Return, PartialReturn = Stage2T::PartialReturn> + 'a> {
+    structural::make_classifier_cps(MakePartialParserFromClassifierCps { stage2 })
+}
+
+pub fn parser_from_visitor<'a, VisitorT: Visitor + 'a>(visitor: VisitorT) -> Box<dyn Parse<Return = VisitorT::Return> + 'a> {
     parser_new(VisitorState::new(visitor))
+}
+
+pub fn partial_parser_from_visitor<'a, VisitorT: Visitor + ExtractPartialResult + 'a>(visitor: VisitorT) -> Box<dyn ParsePartial<Return = VisitorT::Return, PartialReturn = VisitorT::PartialReturn> + 'a> {
+    partial_parser_new(VisitorState::new(visitor))
 }
 
 pub fn parser_from_writing_stage2<'a, WriteT: Write, WritingStage2T: WritingStage2 + 'a>
     (writing_stage2: WritingStage2T, writer: &'a mut WriteT)
-     -> Box<dyn ParsePartial<Return = ()> + 'a>
+     -> Box<dyn Parse<Return = ()> + 'a>
 {
     parser_new(WritingStage2Adapter::new(writing_stage2, writer))
 }
 
 pub fn parser_from_sexp_factory<'a, SexpFactoryT: SexpFactory + 'a>
     (sexp_factory: SexpFactoryT)
-     -> Box<dyn ParsePartial<Return = Vec<SexpFactoryT::Sexp>> + 'a>
+     -> Box<dyn Parse<Return = Vec<SexpFactoryT::Sexp>> + 'a>
 {
     parser_from_visitor(SimpleVisitor::new(sexp_factory))
 }

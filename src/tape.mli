@@ -73,3 +73,12 @@ module Builder : sig
 end
 
 (* TODO: direct to string builder API *)
+
+module Parser_state : sig
+  type t
+
+  val create : unit -> t
+end
+
+val parse_multi_partial : Parser_state.t -> string -> [ `multi ] t Or_error.t
+val parse_multi_eof : Parser_state.t -> [ `multi ] t Or_error.t

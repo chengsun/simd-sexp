@@ -1,4 +1,4 @@
-use crate::{visitor, rust_generator, utils};
+use crate::{parser, visitor, rust_generator, utils};
 
 pub enum Sexp {
     Atom(Vec<u8>),
@@ -266,13 +266,29 @@ impl std::fmt::Display for SingleTape {
 // TODO: rename visitor::Visitor to visitor::Builder maybe?
 pub struct SingleTapeVisitor {
     tape: SingleTape,
+    len_of_valid_partial_result_prefix: usize,
 }
 
 impl SingleTapeVisitor {
     pub fn new() -> SingleTapeVisitor {
         Self {
             tape: SingleTape::new(),
+            len_of_valid_partial_result_prefix: 0,
         }
+    }
+}
+
+impl parser::ExtractPartialResult for SingleTapeVisitor {
+    type PartialReturn = SingleTape;
+
+    fn extract_partial_result(&mut self) -> Self::PartialReturn {
+        let mut split_tape = self.tape.tape.split_off(self.len_of_valid_partial_result_prefix);
+        std::mem::swap(&mut split_tape, &mut self.tape.tape);
+        // now split_tape contains elements in the range
+        // [0..self.len_of_valid_partial_result_prefix]
+
+        self.len_of_valid_partial_result_prefix = 0;
+        SingleTape { tape: split_tape }
     }
 }
 
@@ -302,7 +318,7 @@ impl visitor::Visitor for SingleTapeVisitor {
     }
 
     #[inline(always)]
-    fn atom(&mut self, atoms_start_index: Self::IntermediateAtom, length: usize, _: Option<&mut SingleTapeVisitorContext>) {
+    fn atom(&mut self, atoms_start_index: Self::IntermediateAtom, length: usize, parent_context: Option<&mut SingleTapeVisitorContext>) {
         let padded_length_in_words = length / 4 + 1;
         self.tape.tape[atoms_start_index - 1] = (padded_length_in_words * 2).try_into().unwrap();
         {
@@ -316,6 +332,11 @@ impl visitor::Visitor for SingleTapeVisitor {
             padded_atom[padded_atom.len() - 1] = (padding_bytes - 1).try_into().unwrap();
         }
         self.tape.tape.truncate(atoms_start_index as usize + padded_length_in_words);
+
+        if let None = parent_context {
+            // We know this atom is at the top-level.
+            self.len_of_valid_partial_result_prefix = self.tape.tape.len();
+        }
     }
 
     #[inline(always)]
@@ -328,9 +349,14 @@ impl visitor::Visitor for SingleTapeVisitor {
     }
 
     #[inline(always)]
-    fn list_close(&mut self, context: SingleTapeVisitorContext, _: Option<&mut SingleTapeVisitorContext>) {
+    fn list_close(&mut self, context: SingleTapeVisitorContext, parent_context: Option<&mut SingleTapeVisitorContext>) {
         let x: u32 = ((self.tape.tape.len() - context.tape_start_index - 1) * 2 + 1).try_into().unwrap();
         self.tape.tape[context.tape_start_index] = x;
+
+        if let None = parent_context {
+            // We know this list_close is closing a top-level sexp.
+            self.len_of_valid_partial_result_prefix = self.tape.tape.len();
+        }
     }
 
     #[inline(always)]
@@ -403,6 +429,39 @@ mod ocaml_ffi {
         let dst = unsafe { core::slice::from_raw_parts_mut(ocaml::sys::string_val(dst.raw().0), dst_len_in_words * 4) };
         dst[..src.len()].copy_from_slice(src);
         dst[dst.len() - 1] = src[src.len() - 1] + (dst_extra_padding_in_bytes as u8);
+    }
+
+    pub struct OCamlSingleTapeParserState(Box<dyn parser::ParsePartial<Return=SingleTape, PartialReturn=SingleTape>>);
+    ocaml::custom! (OCamlSingleTapeParserState);
+
+    #[ocaml::func]
+    pub fn ml_rust_parser_single_tape_parser_state_create() -> OCamlSingleTapeParserState {
+        OCamlSingleTapeParserState(parser::partial_parser_from_visitor(SingleTapeVisitor::new()))
+    }
+
+    #[ocaml::func]
+    pub fn ml_rust_parser_single_tape_parse_partial(mut parser_state: ocaml::Pointer<OCamlSingleTapeParserState>, mut input: ByteString) -> ResultWrapper<OCamlSingleTape, ByteString> {
+        match parser_state.as_mut().0.process_partial(&mut input.0[..]) {
+            Ok(()) => (),
+            Err(e) => { return ResultWrapper(Err(ByteString(format!("{}", e).into_bytes()))); },
+        }
+        ResultWrapper(Ok({
+            let partial_tape = parser_state.as_mut().0.extract_partial_result();
+            let slice = utils::slice_u32_to_i32(&partial_tape.tape[..]);
+            unsafe { ocaml::bigarray::Array1::from_slice(slice) }
+        }))
+    }
+
+    #[ocaml::func]
+    pub fn ml_rust_parser_single_tape_parse_eof(mut parser_state: ocaml::Pointer<OCamlSingleTapeParserState>) -> ResultWrapper<OCamlSingleTape, ByteString> {
+        ResultWrapper(
+            match parser_state.as_mut().0.process_eof() {
+                Ok(tape) => Ok({
+                    let slice = utils::slice_u32_to_i32(&tape.tape[..]);
+                    unsafe { ocaml::bigarray::Array1::from_slice(slice) }
+                }),
+                Err(e) => Err(ByteString(format!("{}", e).into_bytes())),
+            })
     }
 
     // TODO: move this somewhere generic
