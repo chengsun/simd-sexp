@@ -90,29 +90,27 @@ impl OutputCsv {
             row: Vec::new(),
         }
     }
+
+    pub fn print_header<'a, KeysT: Iterator<Item=&'a [u8]>, WriteT: Write>(keys: KeysT, writer: &mut WriteT) {
+        let mut needs_comma = false;
+        for key in keys {
+            if needs_comma {
+                writer.write_all(&b","[..]).unwrap();
+            }
+            needs_comma = true;
+            if escape_csv::escape_is_necessary(key) {
+                escape_csv::escape(key, writer).unwrap();
+            } else {
+                writer.write_all(&key[..]).unwrap();
+            }
+        }
+        writer.write_all(&b"\n"[..]).unwrap();
+    }
 }
 
 impl Output for OutputCsv {
-    fn bof<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, segment_index: parser::SegmentIndex) {
+    fn bof<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, _segment_index: parser::SegmentIndex) {
         self.row.resize(keys.len(), 0..0);
-        match segment_index {
-            parser::SegmentIndex::EntireFile | parser::SegmentIndex::Segment(0) => {
-                let mut needs_comma = false;
-                for key in keys {
-                    if needs_comma {
-                        writer.write_all(&b","[..]).unwrap();
-                    }
-                    needs_comma = true;
-                    if escape_csv::escape_is_necessary(key) {
-                        escape_csv::escape(key, writer).unwrap();
-                    } else {
-                        writer.write_all(&key[..]).unwrap();
-                    }
-                }
-                writer.write_all(&b"\n"[..]).unwrap();
-            },
-            parser::SegmentIndex::Segment(_) => (),
-        }
     }
     fn select<WriteT: Write>(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>, key_id: usize, _input: &parser::Input, value_range: Range<usize>, _has_output_on_line: bool) {
         self.row[key_id] = value_range;
@@ -315,10 +313,12 @@ pub fn make_parser<'a, KeysT: IntoIterator<Item = &'a [u8]>, ReadT: BufRead + Se
                 parser_parallel::streaming_from_writing_stage2(move || {
                     Stage2::new(keys.clone(), OutputLabeled::new())
                 }, stdout, chunk_size),
-            OutputKind::Csv { atoms_as_sexps } =>
+            OutputKind::Csv { atoms_as_sexps } => {
+                OutputCsv::print_header(keys.iter().map(|x| *x), stdout);
                 parser_parallel::streaming_from_writing_stage2(move || {
                     Stage2::new(keys.clone(), OutputCsv::new(atoms_as_sexps))
-                }, stdout, chunk_size),
+                }, stdout, chunk_size)
+            },
         };
     }
 
@@ -330,8 +330,10 @@ pub fn make_parser<'a, KeysT: IntoIterator<Item = &'a [u8]>, ReadT: BufRead + Se
             parser::streaming_from_writing_stage2(Stage2::new(keys, OutputValues::new()), stdout),
         OutputKind::Labeled =>
             parser::streaming_from_writing_stage2(Stage2::new(keys, OutputLabeled::new()), stdout),
-        OutputKind::Csv { atoms_as_sexps } =>
-            parser::streaming_from_writing_stage2(Stage2::new(keys, OutputCsv::new(atoms_as_sexps)), stdout),
+        OutputKind::Csv { atoms_as_sexps } => {
+            OutputCsv::print_header(keys.iter().map(|x| *x), stdout);
+            parser::streaming_from_writing_stage2(Stage2::new(keys, OutputCsv::new(atoms_as_sexps)), stdout)
+        },
     }
 }
 
