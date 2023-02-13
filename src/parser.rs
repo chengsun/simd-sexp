@@ -151,6 +151,9 @@ pub struct State<ClassifierT, Stage2T> {
     input_index: usize,
     indices_len: usize,
     indices_buffer: Box<[usize; INDICES_BUFFER_MAX_LEN]>,
+    input: Vec<u8>,
+    input_start_index: usize,
+    input_index_to_keep: usize,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -180,19 +183,29 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
             input_index: 0,
             indices_len: 0,
             indices_buffer: Box::new([0; INDICES_BUFFER_MAX_LEN]),
+            input: Vec::new(),
+            input_start_index: 0,
+            input_index_to_keep: 0,
         }
     }
 
-    pub fn process_streaming<BufReadT: BufRead>(&mut self, buf_reader: &mut BufReadT) -> Result<Stage2T::Return, Error> {
-        let mut input_start_index = 0;
-        let mut input;
+    pub fn reset(&mut self, input_size_hint: Option<usize>) {
+        self.stage2.reset(input_size_hint);
+        self.input_index = 0;
+        self.indices_len = 0;
+        self.input.clear();
+        self.input_start_index = 0;
+        self.input_index_to_keep = 0;
+    }
 
-        self.stage2.reset(None);
+    // TODO: this leaves self in a weird state
+    pub fn process_streaming<BufReadT: BufRead>(&mut self, buf_reader: &mut BufReadT) -> Result<Stage2T::Return, Error> {
+        self.reset(None);
 
         match buf_reader.fill_buf() {
             Ok(&[]) => { return self.stage2.process_eof(); },
             Ok(buf) => {
-                input = buf.to_owned();
+                self.input = buf.to_owned();
                 let len = buf.len();
                 std::mem::drop(buf);
                 buf_reader.consume(len);
@@ -202,7 +215,7 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
 
         loop {
             self.structural_classifier.structural_indices_bitmask(
-                &input[(self.input_index - input_start_index)..],
+                &self.input[(self.input_index - self.input_start_index)..],
                 |bitmask, bitmask_len| {
                     extract::safe_generic(|bit_offset| {
                         self.indices_buffer[self.indices_len] = self.input_index + bit_offset;
@@ -217,42 +230,42 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
                     }
                 });
 
-            let mut input_index_to_keep = input_start_index;
+            self.input_index_to_keep = self.input_start_index;
             for indices_index in 0..(self.indices_len.saturating_sub(1)) {
-                input_index_to_keep =
+                self.input_index_to_keep =
                     self.stage2.process_one(
-                        Input { input: &input[..], offset: input_start_index },
+                        Input { input: &self.input[..], offset: self.input_start_index },
                         self.indices_buffer[indices_index],
                         self.indices_buffer[indices_index + 1],
                         false)?;
-                debug_assert!(input_index_to_keep <= self.indices_buffer[indices_index + 1]);
+                debug_assert!(self.input_index_to_keep <= self.indices_buffer[indices_index + 1]);
             }
 
-            if unlikely(self.input_index - input_start_index >= input.len()) {
+            if unlikely(self.input_index - self.input_start_index >= self.input.len()) {
                 match buf_reader.fill_buf() {
                     Ok(&[]) => {
                         if self.indices_len > 0 {
                             self.stage2.process_one(
-                                Input { input: &input[..], offset: input_start_index },
+                                Input { input: &self.input[..], offset: self.input_start_index },
                                 self.indices_buffer[self.indices_len - 1],
-                                input.len() + input_start_index,
+                                self.input.len() + self.input_start_index,
                                 true)?;
                         }
                         return self.stage2.process_eof();
                     },
                     Ok(buf) => {
                         if self.indices_len > 0 {
-                            let length_to_chop = input_index_to_keep - input_start_index;
-                            let length_to_keep = input.len() - length_to_chop;
-                            input_start_index += length_to_chop;
-                            unsafe { std::ptr::copy(&input[length_to_chop] as *const u8, &mut input[0] as *mut u8, length_to_keep); }
-                            input.truncate(length_to_keep);
+                            let length_to_chop = self.input_index_to_keep - self.input_start_index;
+                            let length_to_keep = self.input.len() - length_to_chop;
+                            self.input_start_index += length_to_chop;
+                            unsafe { std::ptr::copy(&self.input[length_to_chop] as *const u8, &mut self.input[0] as *mut u8, length_to_keep); }
+                            self.input.truncate(length_to_keep);
                         } else {
-                            input_start_index += input.len();
-                            input.clear();
+                            self.input_start_index += self.input.len();
+                            self.input.clear();
                         }
 
-                        input.extend_from_slice(buf);
+                        self.input.extend_from_slice(buf);
                         let len = buf.len();
 
                         std::mem::drop(buf);
@@ -269,8 +282,9 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
         }
     }
 
+    // TODO: this leaves self in a weird state
     pub fn process_all(&mut self, input: &[u8]) -> Result<Stage2T::Return, Error> {
-        self.stage2.reset(Some(input.len()));
+        self.reset(Some(input.len()));
 
         loop {
             self.structural_classifier.structural_indices_bitmask(
