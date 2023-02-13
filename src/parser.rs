@@ -153,6 +153,9 @@ const INDICES_BUFFER_MAX_LEN: usize = 8092;
 pub struct State<ClassifierT, Stage2T> {
     stage2: Stage2T,
     structural_classifier: ClassifierT,
+    input_index: usize,
+    indices_len: usize,
+    indices_buffer: Box<[usize; INDICES_BUFFER_MAX_LEN]>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -179,14 +182,13 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
         State {
             stage2,
             structural_classifier,
+            input_index: 0,
+            indices_len: 0,
+            indices_buffer: Box::new([0; INDICES_BUFFER_MAX_LEN]),
         }
     }
 
     pub fn process_streaming<BufReadT: BufRead>(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Stage2T::Return, Error> {
-        let mut input_index = 0;
-        let mut indices_len = 0;
-        let mut indices_buffer = Box::new([0; INDICES_BUFFER_MAX_LEN]);
-
         let mut input_start_index = 0;
         let mut input;
 
@@ -205,15 +207,15 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
 
         loop {
             self.structural_classifier.structural_indices_bitmask(
-                &input[(input_index - input_start_index)..],
+                &input[(self.input_index - input_start_index)..],
                 |bitmask, bitmask_len| {
                     extract::safe_generic(|bit_offset| {
-                        indices_buffer[indices_len] = input_index + bit_offset;
-                        indices_len += 1;
+                        self.indices_buffer[self.indices_len] = self.input_index + bit_offset;
+                        self.indices_len += 1;
                     }, bitmask);
 
-                    input_index += bitmask_len;
-                    if indices_len + 64 <= INDICES_BUFFER_MAX_LEN {
+                    self.input_index += bitmask_len;
+                    if self.indices_len + 64 <= INDICES_BUFFER_MAX_LEN {
                         structural::CallbackResult::Continue
                     } else {
                         structural::CallbackResult::Finish
@@ -221,30 +223,30 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
                 });
 
             let mut input_index_to_keep = input_start_index;
-            for indices_index in 0..(indices_len.saturating_sub(1)) {
+            for indices_index in 0..(self.indices_len.saturating_sub(1)) {
                 input_index_to_keep =
                     self.stage2.process_one(
                         Input { input: &input[..], offset: input_start_index },
-                        indices_buffer[indices_index],
-                        indices_buffer[indices_index + 1],
+                        self.indices_buffer[indices_index],
+                        self.indices_buffer[indices_index + 1],
                         false)?;
-                debug_assert!(input_index_to_keep <= indices_buffer[indices_index + 1]);
+                debug_assert!(input_index_to_keep <= self.indices_buffer[indices_index + 1]);
             }
 
-            if unlikely(input_index - input_start_index >= input.len()) {
+            if unlikely(self.input_index - input_start_index >= input.len()) {
                 match buf_reader.fill_buf() {
                     Ok(&[]) => {
-                        if indices_len > 0 {
+                        if self.indices_len > 0 {
                             self.stage2.process_one(
                                 Input { input: &input[..], offset: input_start_index },
-                                indices_buffer[indices_len - 1],
+                                self.indices_buffer[self.indices_len - 1],
                                 input.len() + input_start_index,
                                 true)?;
                         }
                         return self.stage2.process_eof();
                     },
                     Ok(buf) => {
-                        if indices_len > 0 {
+                        if self.indices_len > 0 {
                             let length_to_chop = input_index_to_keep - input_start_index;
                             let length_to_keep = input.len() - length_to_chop;
                             input_start_index += length_to_chop;
@@ -265,50 +267,46 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
                 }
             }
 
-            if indices_len > 0 {
-                indices_buffer[0] = indices_buffer[indices_len - 1];
-                indices_len = 1;
+            if self.indices_len > 0 {
+                self.indices_buffer[0] = self.indices_buffer[self.indices_len - 1];
+                self.indices_len = 1;
             }
         }
     }
 
     pub fn process_all(&mut self, segment_index: SegmentIndex, input: &[u8]) -> Result<Stage2T::Return, Error> {
-        let mut input_index = 0;
-        let mut indices_len = 0;
-        let mut indices_buffer = [0; INDICES_BUFFER_MAX_LEN];
-
         self.stage2.process_bof(segment_index, Some(input.len()));
 
         loop {
             self.structural_classifier.structural_indices_bitmask(
-                &input[input_index..],
+                &input[self.input_index..],
                 |bitmask, bitmask_len| {
                     extract::safe_generic(|bit_offset| {
-                        indices_buffer[indices_len] = input_index + bit_offset;
-                        indices_len += 1;
+                        self.indices_buffer[self.indices_len] = self.input_index + bit_offset;
+                        self.indices_len += 1;
                     }, bitmask);
 
-                    input_index += bitmask_len;
-                    if indices_len + 64 <= INDICES_BUFFER_MAX_LEN {
+                    self.input_index += bitmask_len;
+                    if self.indices_len + 64 <= INDICES_BUFFER_MAX_LEN {
                         structural::CallbackResult::Continue
                     } else {
                         structural::CallbackResult::Finish
                     }
                 });
 
-            for indices_index in 0..(indices_len.saturating_sub(1)) {
-                self.stage2.process_one(Input { input, offset: 0 }, indices_buffer[indices_index], indices_buffer[indices_index + 1], false)?;
+            for indices_index in 0..(self.indices_len.saturating_sub(1)) {
+                self.stage2.process_one(Input { input, offset: 0 }, self.indices_buffer[indices_index], self.indices_buffer[indices_index + 1], false)?;
             }
 
-            if input_index >= input.len() {
-                if indices_len > 0 {
-                    self.stage2.process_one(Input { input, offset: 0 }, indices_buffer[indices_len - 1], input.len(), true)?;
+            if self.input_index >= input.len() {
+                if self.indices_len > 0 {
+                    self.stage2.process_one(Input { input, offset: 0 }, self.indices_buffer[self.indices_len - 1], input.len(), true)?;
                 }
                 return self.stage2.process_eof();
             }
 
-            indices_buffer[0] = indices_buffer[indices_len - 1];
-            indices_len = 1;
+            self.indices_buffer[0] = self.indices_buffer[self.indices_len - 1];
+            self.indices_len = 1;
         }
     }
 }
