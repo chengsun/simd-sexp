@@ -329,6 +329,20 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> Parse for State<Class
     }
 }
 
+pub trait ParsePartial: Parse {
+    fn process_partial(&mut self, input: &[u8]) -> Result<(), Error>;
+    fn process_eof(&mut self) -> Result<Self::Return, Error>;
+}
+
+impl<ClassifierT: structural::Classifier, Stage2T: Stage2> ParsePartial for State<ClassifierT, Stage2T> {
+    fn process_partial(&mut self, input: &[u8]) -> Result<(), Error> {
+        self.process_partial(input)
+    }
+    fn process_eof(&mut self) -> Result<Self::Return, Error> {
+        self.process_eof()
+    }
+}
+
 pub trait Stream<BufReadT> {
     type Return;
     fn process_streaming(&mut self, buf_reader: &mut BufReadT) -> Result<Self::Return, Error>;
@@ -346,30 +360,30 @@ struct MakeParserFromClassifierCps<Stage2T> {
 }
 
 impl<'a, Stage2T: Stage2 + 'a> structural::MakeClassifierCps<'a> for MakeParserFromClassifierCps<Stage2T> {
-    type Return = Box<dyn Parse<Return = Stage2T::Return> + 'a>;
+    type Return = Box<dyn ParsePartial<Return = Stage2T::Return> + 'a>;
     fn f<ClassifierT: structural::Classifier + 'a>(self: Self, classifier: ClassifierT) -> Self::Return {
         Box::new(State::new(classifier, self.stage2))
     }
 }
 
-pub fn parser_new<'a, Stage2T: Stage2 + 'a>(stage2: Stage2T) -> Box<dyn Parse<Return = Stage2T::Return> + 'a> {
+pub fn parser_new<'a, Stage2T: Stage2 + 'a>(stage2: Stage2T) -> Box<dyn ParsePartial<Return = Stage2T::Return> + 'a> {
     structural::make_classifier_cps(MakeParserFromClassifierCps { stage2 })
 }
 
-pub fn parser_from_visitor<'a, VisitorT: Visitor + 'a>(visitor: VisitorT) -> Box<dyn Parse<Return = VisitorT::Return> + 'a> {
+pub fn parser_from_visitor<'a, VisitorT: Visitor + 'a>(visitor: VisitorT) -> Box<dyn ParsePartial<Return = VisitorT::Return> + 'a> {
     parser_new(VisitorState::new(visitor))
 }
 
 pub fn parser_from_writing_stage2<'a, WriteT: Write, WritingStage2T: WritingStage2 + 'a>
     (writing_stage2: WritingStage2T, writer: &'a mut WriteT)
-     -> Box<dyn Parse<Return = ()> + 'a>
+     -> Box<dyn ParsePartial<Return = ()> + 'a>
 {
     parser_new(WritingStage2Adapter::new(writing_stage2, writer))
 }
 
 pub fn parser_from_sexp_factory<'a, SexpFactoryT: SexpFactory + 'a>
     (sexp_factory: SexpFactoryT)
-     -> Box<dyn Parse<Return = Vec<SexpFactoryT::Sexp>> + 'a>
+     -> Box<dyn ParsePartial<Return = Vec<SexpFactoryT::Sexp>> + 'a>
 {
     parser_from_visitor(SimpleVisitor::new(sexp_factory))
 }
