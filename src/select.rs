@@ -24,7 +24,7 @@ pub enum OutputKind {
 }
 
 pub trait Output {
-    fn bof<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>);
+    fn reset(&mut self, keys: &Vec<&[u8]>);
     fn select<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, key_id: usize, input: &parser::Input, value_range: Range<usize>, has_output_on_line: bool);
     fn eol<WriteT: Write>(&mut self, writer: &mut WriteT, input: &parser::Input);
 }
@@ -39,7 +39,7 @@ impl OutputValues {
 }
 
 impl Output for OutputValues {
-    fn bof<WriteT: Write>(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>) {
+    fn reset(&mut self, _keys: &Vec<&[u8]>) {
     }
     fn select<WriteT: Write>(&mut self, writer: &mut WriteT, _keys: &Vec<&[u8]>, _key_id: usize, input: &parser::Input, value_range: Range<usize>, has_output_on_line: bool) {
         let value = &input.input[(value_range.start - input.offset)..(value_range.end - input.offset)];
@@ -61,7 +61,7 @@ impl OutputLabeled {
 }
 
 impl Output for OutputLabeled {
-    fn bof<WriteT: Write>(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>) {
+    fn reset(&mut self, _keys: &Vec<&[u8]>) {
     }
     fn select<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, key_id: usize, input: &parser::Input, value_range: Range<usize>, has_output_on_line: bool) {
         let key = keys[key_id];
@@ -109,7 +109,7 @@ impl OutputCsv {
 }
 
 impl Output for OutputCsv {
-    fn bof<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>) {
+    fn reset(&mut self, keys: &Vec<&[u8]>) {
         self.row.resize(keys.len(), 0..0);
     }
     fn select<WriteT: Write>(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>, key_id: usize, _input: &parser::Input, value_range: Range<usize>, _has_output_on_line: bool) {
@@ -183,7 +183,7 @@ impl<'a, OutputT> Stage2<'a, OutputT> {
 
 impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
     fn process_bof<WriteT: Write>(&mut self, writer: &mut WriteT) {
-        self.output.bof(writer, &self.select_vec);
+        self.output.reset(&self.select_vec);
     }
 
     #[inline]
