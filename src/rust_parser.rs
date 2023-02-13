@@ -374,7 +374,7 @@ mod ocaml_ffi {
     #[ocaml::func]
     pub fn ml_rust_parser_single_tape(input: ByteString) -> ResultWrapper<OCamlSingleTape, ByteString> {
         let mut parser = parser::parser_from_visitor(SingleTapeVisitor::new());
-        let sexp_or_error = parser.process(parser::SegmentIndex::EntireFile, &input.0[..]);
+        let sexp_or_error = parser.process(&input.0[..]);
         ResultWrapper(
             match sexp_or_error {
                 Ok(tape) => {
@@ -505,7 +505,7 @@ mod tests {
 
         {
             let mut parser = parser::parser_from_sexp_factory(SexpFactory::new());
-            let sexp_or_error = parser.process(parser::SegmentIndex::EntireFile, &input[..]);
+            let sexp_or_error = parser.process(&input[..]);
             let output = sexp_or_error.map(|sexps| SexpMulti(sexps).to_string());
             validate("SimpleVisitor<SexpFactory>", output);
         }
@@ -513,21 +513,21 @@ mod tests {
         {
             let mut parser = parser::streaming_from_sexp_factory(SexpFactory::new());
             let mut buf_reader = std::io::BufReader::with_capacity(1, input);
-            let sexp_or_error = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut buf_reader);
+            let sexp_or_error = parser.process_streaming(&mut buf_reader);
             let output = sexp_or_error.map(|sexps| SexpMulti(sexps).to_string());
             validate("SimpleVisitor<SexpFactory> (process_streaming)", output);
         }
 
         {
             let mut parser = parser::parser_from_visitor(SplitTapeVisitor::new());
-            let sexp_or_error = parser.process(parser::SegmentIndex::EntireFile, &input[..]);
+            let sexp_or_error = parser.process(&input[..]);
             let output = sexp_or_error.map(|tape| tape.to_string());
             validate("SplitTapeVisitor", output);
         }
 
         {
             let mut parser = parser::parser_from_visitor(SingleTapeVisitor::new());
-            let sexp_or_error = parser.process(parser::SegmentIndex::EntireFile, &input[..]);
+            let sexp_or_error = parser.process(&input[..]);
             let output = sexp_or_error.map(|tape| tape.to_string());
             validate("SingleTapeVisitor", output);
         }

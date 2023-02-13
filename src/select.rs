@@ -24,7 +24,7 @@ pub enum OutputKind {
 }
 
 pub trait Output {
-    fn bof<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, segment_index: parser::SegmentIndex);
+    fn bof<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>);
     fn select<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, key_id: usize, input: &parser::Input, value_range: Range<usize>, has_output_on_line: bool);
     fn eol<WriteT: Write>(&mut self, writer: &mut WriteT, input: &parser::Input);
 }
@@ -39,7 +39,7 @@ impl OutputValues {
 }
 
 impl Output for OutputValues {
-    fn bof<WriteT: Write>(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>, _segment_index: parser::SegmentIndex) {
+    fn bof<WriteT: Write>(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>) {
     }
     fn select<WriteT: Write>(&mut self, writer: &mut WriteT, _keys: &Vec<&[u8]>, _key_id: usize, input: &parser::Input, value_range: Range<usize>, has_output_on_line: bool) {
         let value = &input.input[(value_range.start - input.offset)..(value_range.end - input.offset)];
@@ -61,7 +61,7 @@ impl OutputLabeled {
 }
 
 impl Output for OutputLabeled {
-    fn bof<WriteT: Write>(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>, _segment_index: parser::SegmentIndex) {
+    fn bof<WriteT: Write>(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>) {
     }
     fn select<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, key_id: usize, input: &parser::Input, value_range: Range<usize>, has_output_on_line: bool) {
         let key = keys[key_id];
@@ -109,7 +109,7 @@ impl OutputCsv {
 }
 
 impl Output for OutputCsv {
-    fn bof<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>, _segment_index: parser::SegmentIndex) {
+    fn bof<WriteT: Write>(&mut self, writer: &mut WriteT, keys: &Vec<&[u8]>) {
         self.row.resize(keys.len(), 0..0);
     }
     fn select<WriteT: Write>(&mut self, _writer: &mut WriteT, _keys: &Vec<&[u8]>, key_id: usize, _input: &parser::Input, value_range: Range<usize>, _has_output_on_line: bool) {
@@ -182,8 +182,8 @@ impl<'a, OutputT> Stage2<'a, OutputT> {
 }
 
 impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
-    fn process_bof<WriteT: Write>(&mut self, writer: &mut WriteT, segment_index: parser::SegmentIndex) {
-        self.output.bof(writer, &self.select_vec, segment_index);
+    fn process_bof<WriteT: Write>(&mut self, writer: &mut WriteT) {
+        self.output.bof(writer, &self.select_vec);
     }
 
     #[inline]
@@ -407,7 +407,7 @@ mod ocaml_ffi {
         let keys = keys.iter().map(|s| &s.0[..]);
 
         let mut parser = make_parser(keys, &mut stdout, output_kind, threads);
-        let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut stdin).unwrap();
+        let () = parser.process_streaming(&mut stdin).unwrap();
     }
 }
 
@@ -418,7 +418,7 @@ mod tests {
     fn run_test(output_kind: OutputKind, input: &[u8], keys: &[&[u8]], expected_output: Result<&[u8], parser::Error>) {
         let mut output = Vec::new();
         let mut parser = make_parser(keys.iter().map(|x| *x), &mut output, output_kind, false);
-        let ok = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut std::io::BufReader::new(input));
+        let ok = parser.process_streaming(&mut std::io::BufReader::new(input));
         std::mem::drop(parser);
         let output = ok.map(move |()| output);
 

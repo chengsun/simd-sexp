@@ -18,7 +18,7 @@ impl<'a> ExecWorker<'a> {
 
 impl<'a> parser::Parse for ExecWorker<'a> {
     type Return = Vec<u8>;
-    fn process(&mut self, _segment_index: parser::SegmentIndex, input: &[u8]) -> Result<Self::Return, parser::Error> {
+    fn process(&mut self, input: &[u8]) -> Result<Self::Return, parser::Error> {
         let threads_result = crossbeam_utils::thread::scope(|scope| {
             let mut command =
                 Command::new(self.prog)
@@ -86,6 +86,6 @@ mod ocaml_ffi {
         let params = ExecWorker::new(&prog.0[..], &args[..]);
 
         let mut parser = make_parser(params, &mut stdout);
-        let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut stdin).unwrap();
+        let () = parser.process_streaming(&mut stdin).unwrap();
     }
 }

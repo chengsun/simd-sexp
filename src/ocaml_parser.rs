@@ -139,7 +139,7 @@ unsafe impl<T: ocaml::IntoValue> ocaml::IntoValue for OCamlResult<T> {
 pub fn ml_parse_sexp(input: &[u8]) -> OCamlResult<Vec<ocaml::Value>> {
 
     let mut parser = parser::parser_from_sexp_factory(OCamlSexpFactory::new(rt));
-    let result = parser.process(parser::SegmentIndex::EntireFile, input);
+    let result = parser.process(input);
     OCamlResult(result.map_err(|err| err.to_string()))
 }
 
@@ -155,6 +155,6 @@ impl ocaml::Custom for rust_parser::SplitTape {
 pub fn ml_parse_sexp_to_rust(input: &[u8]) -> OCamlResult<rust_parser::SplitTape> {
 
     let mut parser = parser::parser_from_visitor(rust_parser::SplitTapeVisitor::new());
-    let result = parser.process(parser::SegmentIndex::EntireFile, input);
+    let result = parser.process(input);
     OCamlResult(result.map_err(|err| err.to_string()))
 }

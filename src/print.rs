@@ -23,7 +23,7 @@ impl Stage2 {
 }
 
 impl parser::WritingStage2 for Stage2 {
-    fn process_bof<WriteT: Write>(&mut self, _: &mut WriteT, _: parser::SegmentIndex) {
+    fn process_bof<WriteT: Write>(&mut self, _: &mut WriteT) {
         self.naked_atom_needs_space = false;
         self.depth = 0;
     }
@@ -115,6 +115,6 @@ mod ocaml_ffi {
         let mut stdout = utils::stdout();
 
         let mut printer = make(&mut stdout, threads);
-        let () = printer.process_streaming(parser::SegmentIndex::EntireFile, &mut stdin).unwrap();
+        let () = printer.process_streaming(&mut stdin).unwrap();
     }
 }

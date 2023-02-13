@@ -51,7 +51,7 @@ fn main() {
 
     {
         let mut sexp_parser = parser::parser_from_sexp_factory(rust_parser::SexpFactory::new());
-        let sexp_result = sexp_parser.process(parser::SegmentIndex::EntireFile, &input_pp[..]).unwrap();
+        let sexp_result = sexp_parser.process(&input_pp[..]).unwrap();
         fn count_atoms(sexp: &rust_parser::Sexp) -> usize {
             match sexp {
                 rust_parser::Sexp::Atom(_) => 1,
@@ -71,7 +71,7 @@ fn main() {
             }
         }
         let mut tape_parser = parser::parser_from_visitor(rust_parser::TapeVisitor::new());
-        let tape_result = tape_parser.process(parser::SegmentIndex::EntireFile, &input_pp[..]).unwrap();
+        let tape_result = tape_parser.process(&input_pp[..]).unwrap();
         println!("Input size:     {}", input_pp.len());
         println!("Of which atoms: {}", sexp_result.iter().map(count_atom_size).sum::<usize>());
         println!("Tape size:      {}", std::mem::size_of_val(&*tape_result.tape) + std::mem::size_of_val(&*tape_result.atoms));
@@ -87,7 +87,7 @@ fn main() {
 
             for _i in 0..10000 {
                 let mut parser = parser::parser_from_visitor(rust_parser::TapeVisitor::new());
-                let result = parser.process(parser::SegmentIndex::EntireFile, &input_pp[..]);
+                let result = parser.process(&input_pp[..]);
                 criterion::black_box(result.unwrap());
             }
 
@@ -96,7 +96,7 @@ fn main() {
             for _i in 0..10000 {
                 let e = event_frame.start();
                 let mut parser = parser::parser_from_visitor(rust_parser::TapeVisitor::new());
-                let result = parser.process(parser::SegmentIndex::EntireFile, &input_pp[..]);
+                let result = parser.process(&input_pp[..]);
                 criterion::black_box(result.unwrap());
                 std::mem::drop(e);
             }
@@ -113,7 +113,7 @@ fn main() {
                 let mut read = LoopReader::new(&input_pp[..], 40000);
                 let mut result = Vec::new();
                 let mut parser = select::make_parser(keys, &mut result, select::OutputKind::Csv { atoms_as_sexps: false }, true);
-                let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut read).unwrap();
+                let () = parser.process_streaming(&mut read).unwrap();
                 std::mem::drop(parser);
                 criterion::black_box(result);
             }
@@ -125,7 +125,7 @@ fn main() {
                 let e = event_frame.start();
                 let mut result = Vec::new();
                 let mut parser = select::make_parser(keys, &mut result, select::OutputKind::Csv { atoms_as_sexps: false }, true);
-                let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut read).unwrap();
+                let () = parser.process_streaming(&mut read).unwrap();
                 std::mem::drop(parser);
                 criterion::black_box(result);
                 std::mem::drop(e);
@@ -146,7 +146,7 @@ fn main() {
                 let mut read = LoopReader::new(&input_pp[..], 4000);
                 let mut result = Vec::new();
                 let mut parser = exec_parallel::make_parser(exec_worker.clone(), &mut result);
-                let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut read).unwrap();
+                let () = parser.process_streaming(&mut read).unwrap();
                 std::mem::drop(parser);
                 criterion::black_box(result);
             }
@@ -158,7 +158,7 @@ fn main() {
                 let e = event_frame.start();
                 let mut result = Vec::new();
                 let mut parser = exec_parallel::make_parser(exec_worker.clone(), &mut result);
-                let () = parser.process_streaming(parser::SegmentIndex::EntireFile, &mut read).unwrap();
+                let () = parser.process_streaming(&mut read).unwrap();
                 std::mem::drop(parser);
                 criterion::black_box(result);
                 std::mem::drop(e);

@@ -46,10 +46,10 @@ impl<WritingStage2T: parser::WritingStage2> WritingStage2Adapter<WritingStage2T>
 impl<WritingStage2T: parser::WritingStage2> parser::Stage2 for WritingStage2Adapter<WritingStage2T> {
     type Return = Vec<u8>;
     #[inline]
-    fn process_bof(&mut self, segment_index: parser::SegmentIndex, input_size_hint: Option<usize>) {
+    fn process_bof(&mut self, input_size_hint: Option<usize>) {
         self.buffer.clear();
         input_size_hint.map(|input_size_hint| { self.buffer.reserve(input_size_hint) });
-        self.writing_stage2.process_bof(&mut self.buffer, segment_index)
+        self.writing_stage2.process_bof(&mut self.buffer)
     }
     #[inline(always)]
     fn process_one(&mut self, input: parser::Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, parser::Error> {
@@ -150,7 +150,7 @@ where
             match work_recv.recv() {
                 Ok(work_unit) => {
                     #[cfg(feature = "vtune")] let task = ittapi::Task::begin(&domain, "work_unit");
-                    let result = parser.process(parser::SegmentIndex::Segment(work_unit.index), &work_unit.buffer[..])?;
+                    let result = parser.process(&work_unit.buffer[..])?;
                     #[cfg(feature = "vtune")] task.end();
                     results_send.send(WorkResult{ index: work_unit.index, result }).map_err(|_| ()).unwrap();
                 },
@@ -297,11 +297,7 @@ impl<BufReadT: std::io::BufRead + Send, JoinerT: Joiner> parser::Stream<BufReadT
 where JoinerT::Worker : Send, <JoinerT::Worker as Parse>::Return : Send
 {
     type Return = JoinerT::Return;
-    fn process_streaming(&mut self, segment_index: parser::SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::Return, Error> {
-        match segment_index {
-            parser::SegmentIndex::EntireFile => (),
-            parser::SegmentIndex::Segment(_) => unimplemented!(),
-        }
+    fn process_streaming(&mut self, buf_reader: &mut BufReadT) -> Result<Self::Return, Error> {
         State::process_streaming(self, buf_reader)
     }
 }

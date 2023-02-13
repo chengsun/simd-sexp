@@ -13,15 +13,10 @@ pub struct Input<'a> {
 /// whole thing. The `Stage2` might want to know about this (e.g. a CSV writer
 /// might want to print out the header only when processing the actual beginning
 /// of the sexp.)
-pub enum SegmentIndex {
-    EntireFile,
-    Segment(usize),
-}
-
 pub trait Stage2 {
     type Return;
 
-    fn process_bof(&mut self, segment_index: SegmentIndex, input_size_hint: Option<usize>);
+    fn process_bof(&mut self, input_size_hint: Option<usize>);
 
     /// Returns the input index that must be preserved for next call.
     fn process_one(&mut self, input: Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, Error>;
@@ -30,7 +25,7 @@ pub trait Stage2 {
 }
 
 pub trait WritingStage2 {
-    fn process_bof<WriteT: Write>(&mut self, writer: &mut WriteT, segment_index: SegmentIndex);
+    fn process_bof<WriteT: Write>(&mut self, writer: &mut WriteT);
 
     /// Returns the input index that must be preserved for next call.
     fn process_one<WriteT: Write>(&mut self, writer: &mut WriteT, input: Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, Error>;
@@ -56,8 +51,8 @@ impl<'a, WriteT: Write, WritingStage2T: WritingStage2> WritingStage2Adapter<'a, 
 
 impl<'a, WriteT: Write, WritingStage2T: WritingStage2> Stage2 for WritingStage2Adapter<'a, WritingStage2T, WriteT> {
     type Return = ();
-    fn process_bof(&mut self, segment_index: SegmentIndex, _input_size_hint: Option<usize>) {
-        self.writing_stage2.process_bof(self.writer, segment_index)
+    fn process_bof(&mut self, _input_size_hint: Option<usize>) {
+        self.writing_stage2.process_bof(self.writer)
     }
     #[inline(always)]
     fn process_one(&mut self, input: Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, Error> {
@@ -90,7 +85,7 @@ impl<VisitorT: Visitor> VisitorState<VisitorT> {
 impl<VisitorT: Visitor> Stage2 for VisitorState<VisitorT> {
     type Return = VisitorT::Return;
 
-    fn process_bof(&mut self, _segment_index: SegmentIndex, input_size_hint: Option<usize>) {
+    fn process_bof(&mut self, input_size_hint: Option<usize>) {
         self.visitor.bof(input_size_hint);
     }
 
@@ -188,11 +183,11 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
         }
     }
 
-    pub fn process_streaming<BufReadT: BufRead>(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Stage2T::Return, Error> {
+    pub fn process_streaming<BufReadT: BufRead>(&mut self, buf_reader: &mut BufReadT) -> Result<Stage2T::Return, Error> {
         let mut input_start_index = 0;
         let mut input;
 
-        self.stage2.process_bof(segment_index, None);
+        self.stage2.process_bof(None);
 
         match buf_reader.fill_buf() {
             Ok(&[]) => { return self.stage2.process_eof(); },
@@ -274,8 +269,8 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
         }
     }
 
-    pub fn process_all(&mut self, segment_index: SegmentIndex, input: &[u8]) -> Result<Stage2T::Return, Error> {
-        self.stage2.process_bof(segment_index, Some(input.len()));
+    pub fn process_all(&mut self, input: &[u8]) -> Result<Stage2T::Return, Error> {
+        self.stage2.process_bof(Some(input.len()));
 
         loop {
             self.structural_classifier.structural_indices_bitmask(
@@ -313,25 +308,25 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
 
 pub trait Parse {
     type Return;
-    fn process(&mut self, segment_index: SegmentIndex, input: &[u8]) -> Result<Self::Return, Error>;
+    fn process(&mut self, input: &[u8]) -> Result<Self::Return, Error>;
 }
 
 impl<ClassifierT: structural::Classifier, Stage2T: Stage2> Parse for State<ClassifierT, Stage2T> {
     type Return = Stage2T::Return;
-    fn process(&mut self, segment_index: SegmentIndex, input: &[u8]) -> Result<Self::Return, Error> {
-        self.process_all(segment_index, input)
+    fn process(&mut self, input: &[u8]) -> Result<Self::Return, Error> {
+        self.process_all(input)
     }
 }
 
 pub trait Stream<BufReadT> {
     type Return;
-    fn process_streaming(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::Return, Error>;
+    fn process_streaming(&mut self, buf_reader: &mut BufReadT) -> Result<Self::Return, Error>;
 }
 
 impl<BufReadT: BufRead, ClassifierT: structural::Classifier, Stage2T: Stage2> Stream<BufReadT> for State<ClassifierT, Stage2T> {
     type Return = Stage2T::Return;
-    fn process_streaming(&mut self, segment_index: SegmentIndex, buf_reader: &mut BufReadT) -> Result<Self::Return, Error> {
-        self.process_streaming(segment_index, buf_reader)
+    fn process_streaming(&mut self, buf_reader: &mut BufReadT) -> Result<Self::Return, Error> {
+        self.process_streaming(buf_reader)
     }
 }
 

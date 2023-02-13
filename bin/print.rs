@@ -5,5 +5,5 @@ fn main() {
     let mut stdout = utils::stdout();
 
     let mut print = print::make(&mut stdout, true);
-    let () = print.process_streaming(parser::SegmentIndex::EntireFile, &mut stdin).unwrap();
+    let () = print.process_streaming(&mut stdin).unwrap();
 }
