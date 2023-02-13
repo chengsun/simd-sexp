@@ -198,20 +198,8 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
         self.input_index_to_keep = 0;
     }
 
-    // TODO: this leaves self in a weird state
-    pub fn process_streaming<BufReadT: BufRead>(&mut self, buf_reader: &mut BufReadT) -> Result<Stage2T::Return, Error> {
-        self.reset(None);
-
-        match buf_reader.fill_buf() {
-            Ok(&[]) => { return self.stage2.process_eof(); },
-            Ok(buf) => {
-                self.input = buf.to_owned();
-                let len = buf.len();
-                std::mem::drop(buf);
-                buf_reader.consume(len);
-            },
-            Err(e) => { return Err(Error::IOError(e.kind())) },
-        }
+    pub fn process_partial(&mut self, new_input: &[u8]) -> Result<(), Error> {
+        self.input.extend_from_slice(new_input);
 
         loop {
             self.structural_classifier.structural_indices_bitmask(
@@ -241,48 +229,57 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
                 debug_assert!(self.input_index_to_keep <= self.indices_buffer[indices_index + 1]);
             }
 
-            if unlikely(self.input_index - self.input_start_index >= self.input.len()) {
-                match buf_reader.fill_buf() {
-                    Ok(&[]) => {
-                        if self.indices_len > 0 {
-                            self.stage2.process_one(
-                                Input { input: &self.input[..], offset: self.input_start_index },
-                                self.indices_buffer[self.indices_len - 1],
-                                self.input.len() + self.input_start_index,
-                                true)?;
-                        }
-                        return self.stage2.process_eof();
-                    },
-                    Ok(buf) => {
-                        if self.indices_len > 0 {
-                            let length_to_chop = self.input_index_to_keep - self.input_start_index;
-                            let length_to_keep = self.input.len() - length_to_chop;
-                            self.input_start_index += length_to_chop;
-                            unsafe { std::ptr::copy(&self.input[length_to_chop] as *const u8, &mut self.input[0] as *mut u8, length_to_keep); }
-                            self.input.truncate(length_to_keep);
-                        } else {
-                            self.input_start_index += self.input.len();
-                            self.input.clear();
-                        }
-
-                        self.input.extend_from_slice(buf);
-                        let len = buf.len();
-
-                        std::mem::drop(buf);
-                        buf_reader.consume(len);
-                    },
-                    Err(e) => { return Err(Error::IOError(e.kind())) },
-                }
-            }
-
             if self.indices_len > 0 {
                 self.indices_buffer[0] = self.indices_buffer[self.indices_len - 1];
                 self.indices_len = 1;
             }
+
+            if unlikely(self.input_index - self.input_start_index >= self.input.len()) {
+                let length_to_chop = self.input_index_to_keep - self.input_start_index;
+                let length_to_keep = self.input.len() - length_to_chop;
+                self.input_start_index += length_to_chop;
+                if length_to_keep > 0 {
+                    unsafe { std::ptr::copy(&self.input[length_to_chop] as *const u8, &mut self.input[0] as *mut u8, length_to_keep); }
+                }
+                self.input.truncate(length_to_keep);
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    // TODO: I think I want this function to consume self, but that plays
+    // weirdly with Box<dyn Parser>
+    pub fn process_eof(&mut self) -> Result<Stage2T::Return, Error> {
+        if self.indices_len > 0 {
+            debug_assert!(self.indices_len == 1);
+            self.stage2.process_one(
+                Input { input: &self.input[..], offset: self.input_start_index },
+                self.indices_buffer[self.indices_len - 1],
+                self.input.len() + self.input_start_index,
+                true)?;
+        }
+        self.stage2.process_eof()
+    }
+
+    pub fn process_streaming<BufReadT: BufRead>(&mut self, buf_reader: &mut BufReadT) -> Result<Stage2T::Return, Error> {
+        self.reset(None);
+
+        loop {
+            match buf_reader.fill_buf() {
+                Ok(&[]) => { return self.process_eof(); },
+                Ok(buf) => {
+                    self.process_partial(buf)?;
+                    let len = buf.len();
+                    std::mem::drop(buf);
+                    buf_reader.consume(len);
+                },
+                Err(e) => { return Err(Error::IOError(e.kind())) },
+            }
         }
     }
 
-    // TODO: this leaves self in a weird state
     pub fn process_all(&mut self, input: &[u8]) -> Result<Stage2T::Return, Error> {
         self.reset(Some(input.len()));
 
