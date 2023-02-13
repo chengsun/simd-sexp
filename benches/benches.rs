@@ -12,13 +12,19 @@ fn bench_parser(c: &mut Criterion) {
         group.bench_function("rust-sexp",
                              |b| b.iter(|| {
                                  let mut parser = parser::parser_from_sexp_factory(rust_parser::SexpFactory::new());
-                                 let result = parser.process(parser::SegmentIndex::EntireFile, input_pp).unwrap();
+                                 let result = parser.process(input_pp).unwrap();
                                  black_box(result)
                              }));
-        group.bench_function("rust-tape",
+        group.bench_function("rust-single-tape",
                              |b| b.iter(|| {
-                                 let mut parser = parser::parser_from_visitor(rust_parser::TapeVisitor::new());
-                                 let result = parser.process(parser::SegmentIndex::EntireFile,input_pp).unwrap();
+                                 let mut parser = parser::parser_from_visitor(rust_parser::SingleTapeVisitor::new());
+                                 let result = parser.process(input_pp).unwrap();
+                                 black_box(result)
+                             }));
+        group.bench_function("rust-split-tape",
+                             |b| b.iter(|| {
+                                 let mut parser = parser::parser_from_visitor(rust_parser::SplitTapeVisitor::new());
+                                 let result = parser.process(input_pp).unwrap();
                                  black_box(result)
                              }));
         group.finish();
@@ -33,13 +39,19 @@ fn bench_parser(c: &mut Criterion) {
         group.bench_function("rust-sexp",
                              |b| b.iter(|| {
                                  let mut parser = parser::parser_from_sexp_factory(rust_parser::SexpFactory::new());
-                                 let result = parser.process(parser::SegmentIndex::EntireFile,input_mach).unwrap();
+                                 let result = parser.process(input_mach).unwrap();
                                  black_box(result)
                              }));
-        group.bench_function("rust-tape",
+        group.bench_function("rust-single-tape",
                              |b| b.iter(|| {
-                                 let mut parser = parser::parser_from_visitor(rust_parser::TapeVisitor::new());
-                                 let result = parser.process(parser::SegmentIndex::EntireFile,input_mach).unwrap();
+                                 let mut parser = parser::parser_from_visitor(rust_parser::SingleTapeVisitor::new());
+                                 let result = parser.process(input_mach).unwrap();
+                                 black_box(result)
+                             }));
+        group.bench_function("rust-split-tape",
+                             |b| b.iter(|| {
+                                 let mut parser = parser::parser_from_visitor(rust_parser::SplitTapeVisitor::new());
+                                 let result = parser.process(input_mach).unwrap();
                                  black_box(result)
                              }));
         group.finish();
