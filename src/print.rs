@@ -23,7 +23,7 @@ impl Stage2 {
 }
 
 impl parser::WritingStage2 for Stage2 {
-    fn process_bof<WriteT: Write>(&mut self, _: &mut WriteT) {
+    fn reset(&mut self) {
         self.naked_atom_needs_space = false;
         self.depth = 0;
     }

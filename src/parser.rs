@@ -16,7 +16,7 @@ pub struct Input<'a> {
 pub trait Stage2 {
     type Return;
 
-    fn process_bof(&mut self, input_size_hint: Option<usize>);
+    fn reset(&mut self, input_size_hint: Option<usize>);
 
     /// Returns the input index that must be preserved for next call.
     fn process_one(&mut self, input: Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, Error>;
@@ -25,7 +25,7 @@ pub trait Stage2 {
 }
 
 pub trait WritingStage2 {
-    fn process_bof<WriteT: Write>(&mut self, writer: &mut WriteT);
+    fn reset(&mut self);
 
     /// Returns the input index that must be preserved for next call.
     fn process_one<WriteT: Write>(&mut self, writer: &mut WriteT, input: Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, Error>;
@@ -51,8 +51,8 @@ impl<'a, WriteT: Write, WritingStage2T: WritingStage2> WritingStage2Adapter<'a, 
 
 impl<'a, WriteT: Write, WritingStage2T: WritingStage2> Stage2 for WritingStage2Adapter<'a, WritingStage2T, WriteT> {
     type Return = ();
-    fn process_bof(&mut self, _input_size_hint: Option<usize>) {
-        self.writing_stage2.process_bof(self.writer)
+    fn reset(&mut self, _input_size_hint: Option<usize>) {
+        self.writing_stage2.reset();
     }
     #[inline(always)]
     fn process_one(&mut self, input: Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, Error> {
@@ -85,8 +85,8 @@ impl<VisitorT: Visitor> VisitorState<VisitorT> {
 impl<VisitorT: Visitor> Stage2 for VisitorState<VisitorT> {
     type Return = VisitorT::Return;
 
-    fn process_bof(&mut self, input_size_hint: Option<usize>) {
-        self.visitor.bof(input_size_hint);
+    fn reset(&mut self, input_size_hint: Option<usize>) {
+        self.visitor.reset(input_size_hint);
     }
 
     #[inline]
@@ -187,7 +187,7 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
         let mut input_start_index = 0;
         let mut input;
 
-        self.stage2.process_bof(None);
+        self.stage2.reset(None);
 
         match buf_reader.fill_buf() {
             Ok(&[]) => { return self.stage2.process_eof(); },
@@ -270,7 +270,7 @@ impl<ClassifierT: structural::Classifier, Stage2T: Stage2> State<ClassifierT, St
     }
 
     pub fn process_all(&mut self, input: &[u8]) -> Result<Stage2T::Return, Error> {
-        self.stage2.process_bof(Some(input.len()));
+        self.stage2.reset(Some(input.len()));
 
         loop {
             self.structural_classifier.structural_indices_bitmask(

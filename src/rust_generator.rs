@@ -20,7 +20,7 @@ impl<'a, WriteT: Write> Generator<'a, WriteT> {
 }
 
 impl<'a, WriteT: Write> visitor::ReadVisitor for Generator<'a, WriteT> {
-    fn bof(&mut self) {
+    fn reset(&mut self) {
         self.needs_space_before_naked_atom = false;
     }
     fn atom(&mut self, atom: &[u8]) {

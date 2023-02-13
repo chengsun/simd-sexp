@@ -7,7 +7,7 @@ pub trait SexpFactory {
 /// Visitor for traversing a sexp type that is already fully parsed and
 /// validated
 pub trait ReadVisitor {
-    fn bof(&mut self);
+    fn reset(&mut self);
     fn atom(&mut self, atom: &[u8]);
     fn list_open(&mut self);
     fn list_close(&mut self);
@@ -23,7 +23,7 @@ pub trait Visitor {
     type IntermediateAtom;
     type Context;
     type Return;
-    fn bof(&mut self, input_size_hint: Option<usize>);
+    fn reset(&mut self, input_size_hint: Option<usize>);
     fn atom_reserve(&mut self, length_upper_bound: usize) -> Self::IntermediateAtom;
     fn atom_borrow<'a, 'b : 'a>(&'b mut self, atom: &'a mut Self::IntermediateAtom) -> &'a mut [u8];
     fn atom(&mut self, atom: Self::IntermediateAtom, length: usize, parent_context: Option<&mut Self::Context>);
@@ -51,7 +51,7 @@ impl<SexpFactoryT: SexpFactory> Visitor for SimpleVisitor<SexpFactoryT> {
     type IntermediateAtom = Vec<u8>;
     type Context = usize;
     type Return = Vec<SexpFactoryT::Sexp>;
-    fn bof(&mut self, _input_size_hint: Option<usize>) {
+    fn reset(&mut self, _input_size_hint: Option<usize>) {
     }
     fn atom_reserve(&mut self, length_upper_bound: usize) -> Self::IntermediateAtom {
         (0..length_upper_bound).map(|_| 0u8).collect()

@@ -182,7 +182,7 @@ impl<'a, OutputT> Stage2<'a, OutputT> {
 }
 
 impl<'a, OutputT: Output> parser::WritingStage2 for Stage2<'a, OutputT> {
-    fn process_bof<WriteT: Write>(&mut self, writer: &mut WriteT) {
+    fn reset(&mut self) {
         self.output.reset(&self.select_vec);
     }
 

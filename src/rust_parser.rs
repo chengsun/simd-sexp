@@ -22,7 +22,7 @@ impl Sexp {
 
 impl visitor::ReadVisitable for Sexp {
     fn visit<VisitorT: visitor::ReadVisitor>(&self, visitor: &mut VisitorT) {
-        visitor.bof();
+        visitor.reset();
         self.visit_internal(visitor);
         visitor.eof();
     }
@@ -45,7 +45,7 @@ impl std::fmt::Display for SexpMulti {
         use visitor::ReadVisitor;
         let mut output = Vec::new();
         let mut generator = rust_generator::Generator::new(&mut output);
-        generator.bof();
+        generator.reset();
         for s in self.0.iter() {
             s.visit_internal(&mut generator);
         }
@@ -99,7 +99,7 @@ impl visitor::ReadVisitable for SplitTape {
     fn visit<VisitorT: visitor::ReadVisitor>(&self, visitor: &mut VisitorT) {
         let mut i = 0usize;
         let mut list_ends: Vec<usize> = Vec::new();
-        visitor.bof();
+        visitor.reset();
         while i < self.tape.len() {
             let x = self.tape[i];
             i += 1;
@@ -155,7 +155,7 @@ impl visitor::Visitor for SplitTapeVisitor {
     type Context = SplitTapeVisitorContext;
     type Return = SplitTape;
 
-    fn bof(&mut self, _input_size_hint: Option<usize>) {
+    fn reset(&mut self, _input_size_hint: Option<usize>) {
     }
 
     #[inline(always)]
@@ -223,7 +223,7 @@ impl visitor::ReadVisitable for SingleTape {
     fn visit<VisitorT: visitor::ReadVisitor>(&self, visitor: &mut VisitorT) {
         let mut i = 0usize;
         let mut list_ends: Vec<usize> = Vec::new();
-        visitor.bof();
+        visitor.reset();
         while i < self.tape.len() {
             let x = self.tape[i];
             i += 1;
@@ -285,7 +285,7 @@ impl visitor::Visitor for SingleTapeVisitor {
     type Context = SingleTapeVisitorContext;
     type Return = SingleTape;
 
-    fn bof(&mut self, _input_size_hint: Option<usize>) {
+    fn reset(&mut self, _input_size_hint: Option<usize>) {
     }
 
     #[inline(always)]
@@ -415,7 +415,7 @@ mod ocaml_ffi {
     impl<V: visitor::Visitor> VisitorBuilder<V> {
         fn new(v: V) -> Self {
             let mut builder = Self { tape: v, context_stack: Vec::new() };
-            builder.tape.bof(None);
+            builder.tape.reset(None);
             builder
         }
 

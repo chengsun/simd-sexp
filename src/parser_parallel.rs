@@ -19,7 +19,7 @@ pub trait Joiner {
     type Worker: Parse;
     type Return;
 
-    fn process_bof(&mut self, input_size_hint: Option<usize>);
+    fn reset(&mut self, input_size_hint: Option<usize>);
     fn create_worker(&mut self) -> Self::Worker;
     fn join(&mut self, result: <Self::Worker as Parse>::Return) -> Result<(), Error>;
     fn process_eof(&mut self) -> Result<Self::Return, Error>;
@@ -46,10 +46,10 @@ impl<WritingStage2T: parser::WritingStage2> WritingStage2Adapter<WritingStage2T>
 impl<WritingStage2T: parser::WritingStage2> parser::Stage2 for WritingStage2Adapter<WritingStage2T> {
     type Return = Vec<u8>;
     #[inline]
-    fn process_bof(&mut self, input_size_hint: Option<usize>) {
+    fn reset(&mut self, input_size_hint: Option<usize>) {
         self.buffer.clear();
         input_size_hint.map(|input_size_hint| { self.buffer.reserve(input_size_hint) });
-        self.writing_stage2.process_bof(&mut self.buffer)
+        self.writing_stage2.reset();
     }
     #[inline(always)]
     fn process_one(&mut self, input: parser::Input, this_index: usize, next_index: usize, is_eof: bool) -> Result<usize, parser::Error> {
@@ -82,7 +82,7 @@ impl<'a, WriteT: Write, WorkerT: Parse<Return = Vec<u8>>> WritingJoiner<'a, Writ
 impl<'a, WriteT: Write, WorkerT: Parse<Return = Vec<u8>>> Joiner for WritingJoiner<'a, WriteT, WorkerT> {
     type Worker = WorkerT;
     type Return = ();
-    fn process_bof(&mut self, _input_size_hint: Option<usize>) {
+    fn reset(&mut self, _input_size_hint: Option<usize>) {
     }
     fn create_worker(&mut self) -> Self::Worker {
         (self.create_writing_worker)()
@@ -260,7 +260,7 @@ where
     }
 
     pub fn process_streaming<'a, BufReadT : std::io::BufRead + Send>(&'a mut self, buf_reader: &mut BufReadT) -> Result<JoinerT::Return, Error> {
-        self.joiner.process_bof(None);
+        self.joiner.reset(None);
 
         // The maximum number of chunks ahead of the last fully-joined (in order) chunk
         // that we're willing to start processing of.
