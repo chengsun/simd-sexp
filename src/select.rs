@@ -167,8 +167,7 @@ pub struct Stage2<'a, OutputT> {
 }
 
 impl<'a, OutputT> Stage2<'a, OutputT> {
-    pub fn new<T: IntoIterator<Item = &'a [u8]>>(iter: T, output: OutputT) -> Self {
-        let select_vec: Vec<&'a [u8]> = iter.into_iter().collect();
+    pub fn new(select_vec: Vec<&'a [u8]>, output: OutputT) -> Self {
         let mut select_tree: BTreeMap<&'a [u8], u32> = BTreeMap::new();
         for (key_id, key) in select_vec.iter().enumerate() {
             select_tree.insert(key, key_id.try_into().unwrap());
@@ -310,15 +309,15 @@ pub fn make_parser<'a, KeysT: IntoIterator<Item = &'a [u8]>, ReadT: BufRead + Se
         return match output_kind {
             OutputKind::Values =>
                 parser_parallel::streaming_from_writing_stage2(move || {
-                    Stage2::new(keys.iter().map(|x| *x), OutputValues::new())
+                    Stage2::new(keys.clone(), OutputValues::new())
                 }, stdout, chunk_size),
             OutputKind::Labeled =>
                 parser_parallel::streaming_from_writing_stage2(move || {
-                    Stage2::new(keys.iter().map(|x| *x), OutputLabeled::new())
+                    Stage2::new(keys.clone(), OutputLabeled::new())
                 }, stdout, chunk_size),
             OutputKind::Csv { atoms_as_sexps } =>
                 parser_parallel::streaming_from_writing_stage2(move || {
-                    Stage2::new(keys.iter().map(|x| *x), OutputCsv::new(atoms_as_sexps))
+                    Stage2::new(keys.clone(), OutputCsv::new(atoms_as_sexps))
                 }, stdout, chunk_size),
         };
     }
